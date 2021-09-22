@@ -1,0 +1,6 @@
+sensepy/__pycache__
+*.pyc
+*.csv
+*.txt
+*.png
+*.pdf
