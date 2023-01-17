@@ -11,6 +11,10 @@ packages = [
     'pymanopt',
     'pandas',
     'mosek',
+    'quadprog',
+    'cvxpylayers',
+    'functorch',
+    'autograd_minimize'
 ]
 #
 setup(name='stpy',

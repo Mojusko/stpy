@@ -13,11 +13,20 @@ The `-e` option installs the package in "editable" mode, where pip links to your
 The project requires Python 3.6, and the dependencies should be installed with the package (let me know if it doesn't work for you).
 
 ## Tutorials
-TBD
-
+  - Gaussian process
+     1. Fitting the model through evidence maximization [ref](link)
+     2. Comparison of sampling with Fourier Features [ref](link) 
+  - Poisson point process 
+    1. Fitting a poisson process 
+  - Regularized Kernel Ridge Regression
+    1. fitting & creating uncertainty sets
+    2. Setting a basis 
 ## Requires
   - Classical: pytorch, cvxpy, numpy, scipy, sklearn, pymanopt, mosek, pandas
-  - Special: stpy (see: <>), pytorch-minimize <https://github.com/rfeinman/pytorch-minimize>, hessian <https://github.com/mariogeiger/hessian>
+  
+  - Special: 
+        1. pytorch-minimize <https://github.com/rfeinman/pytorch-minimize>
+        
 
 ## Licence
 Copyright (c) 2021 Mojmir Mutny

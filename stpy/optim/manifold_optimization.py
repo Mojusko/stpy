@@ -1,14 +1,10 @@
 import torch
-import numpy as np
-import pymanopt
-from pymanopt.manifolds import Euclidean, Rotations, Product, Stiefel, PositiveDefinite
 from pymanopt import Problem
-from pymanopt.solvers import SteepestDescent, ConjugateGradient, TrustRegions
+from pymanopt.optimizers import SteepestDescent
 from scipy.optimize import minimize
 
 
-def optimize(manifold, cost_function, number_args, sampling_func, optimizer,restarts):
-
+def optimize(manifold, cost_function, number_args, sampling_func, optimizer, restarts):
 	[cost_numpy, egrad_numpy, ehess_numpy] = cost_function.define()
 
 	if optimizer == "pymanopt":
@@ -47,5 +43,3 @@ def optimize(manifold, cost_function, number_args, sampling_func, optimizer,rest
 			else:
 				best_params[0] = torch.from_numpy(Xopt)
 	return best_params
-
-

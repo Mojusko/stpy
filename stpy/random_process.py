@@ -5,32 +5,42 @@ import matplotlib
 
 class RandomProcess:
 
-
-	def visualize_function(self,xtest,f_true, filename = None):
+	def visualize_function(self,xtest,f_trues, filename = None, colors = None):
 		from mpl_toolkits.mplot3d import axes3d, Axes3D
 		d = xtest.size()[1]
 		if d == 1:
-			plt.plot(xtest,f_true(xtest))
+			if isinstance(f_trues, list):
+				for f_true in f_trues:
+					plt.plot(xtest,f_true(xtest))
+			else:
+				plt.plot(xtest, f_trues(xtest))
 		elif d == 2:
 			from scipy.interpolate import griddata
-			#plt.figure(figsize=(15, 7))
-			#plt.clf()
+			plt.figure(figsize=(15, 7))
+			plt.clf()
 			ax = plt.axes(projection='3d')
 			xx = xtest[:, 0].numpy()
 			yy = xtest[:, 1].numpy()
 			grid_x, grid_y = np.mgrid[min(xx):max(xx):100j, min(yy):max(yy):100j]
-			grid_z = griddata((xx, yy), f_true(xtest)[:, 0].numpy(), (grid_x, grid_y), method='linear')
-			ax.plot_surface(grid_x, grid_y, grid_z, color='b', alpha=0.4)
+			if isinstance(f_trues, list):
+				for index, f_true in enumerate(f_trues):
+					grid_z = griddata((xx, yy), f_true(xtest)[:, 0].numpy(), (grid_x, grid_y), method='linear')
+					if colors is not None:
+						color = colors[index]
+					ax.plot_surface(grid_x, grid_y, grid_z, alpha=0.4, color = color)
+			else:
+				grid_z = griddata((xx, yy), f_trues(xtest)[:, 0].numpy(), (grid_x, grid_y), method='linear')
+				ax.plot_surface(grid_x, grid_y, grid_z, alpha=0.4)
+
 			if filename is not None:
 				plt.xticks(fontsize=20, rotation=0)
 				plt.yticks(fontsize=20, rotation=0)
 				plt.savefig(filename, dpi = 300)
-			plt.show()
 
 
 
 
-	def visualize_function_contous(self,xtest,f_true, filename = None, levels = 10, figsize = (15,7)):
+	def visualize_function_contour(self, xtest, f_true, filename = None, levels = 10, figsize = (15, 7)):
 		from mpl_toolkits.mplot3d import axes3d, Axes3D
 		d = xtest.size()[1]
 		if d ==1:
@@ -42,6 +52,7 @@ class RandomProcess:
 			grid_x, grid_y = np.mgrid[min(xx):max(xx):100j, min(yy):max(yy):100j]
 			f = f_true(xtest)
 			grid_z_f = griddata((xx, yy), f[:, 0].detach().numpy(), (grid_x, grid_y), method='linear')
+
 			fig, ax = plt.subplots(figsize=figsize)
 			cs = ax.contourf(grid_x, grid_y, grid_z_f,levels= levels)
 			ax.contour(cs, colors='k')

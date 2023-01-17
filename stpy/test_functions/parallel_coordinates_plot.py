@@ -1,9 +1,11 @@
-from pandas.plotting import parallel_coordinates
-import pandas as pd
-import numpy as np
 import copy
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from pandas.plotting import parallel_coordinates
 from sklearn.preprocessing import StandardScaler
+
 
 def parallel_coordinates_bo(X, Y, names=None, scaling=None, fig_size=(20, 10)):
 	"""
@@ -48,19 +50,21 @@ def parallel_coordinates_bo(X, Y, names=None, scaling=None, fig_size=(20, 10)):
 	ax.get_legend().remove()
 	plt.show()
 
+
 if __name__ == "__main__":
 	from stpy.test_functions.protein_benchmark import ProteinBenchmark
-	Benchmark = ProteinBenchmark("protein_data_gb1.h5", dim = 3, ref = ['A','B','C','D'])
+
+	Benchmark = ProteinBenchmark("protein_data_gb1.h5", dim=3, ref=['A', 'B', 'C', 'D'])
 	names = Benchmark.data['P1'].values
 	Benchmark.self_translate()
 	vals = Benchmark.data['P1'].values
 
-	print (Benchmark.data)
-	X = Benchmark.data.values[0:8000,0:3]
-	Y = Benchmark.data.values[0:8000,5].reshape(-1,1)
-	print (X.shape,Y.shape)
-	names = ["P1","P2","P3"]
-	#plt.yticks(vals, names)
-	parallel_coordinates_bo(X,Y, names = names)
+	print(Benchmark.data)
+	X = Benchmark.data.values[0:8000, 0:3]
+	Y = Benchmark.data.values[0:8000, 5].reshape(-1, 1)
+	print(X.shape, Y.shape)
+	names = ["P1", "P2", "P3"]
+	# plt.yticks(vals, names)
+	parallel_coordinates_bo(X, Y, names=names)
 
 	plt.show()

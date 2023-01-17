@@ -1,15 +1,9 @@
-import numpy as np
-import scipy as scipy
-import torch
-import matplotlib.pyplot as plt
+from stpy.estimator import Estimator
 from stpy.helpers.helper import *
 from stpy.kernels import KernelFunction
-from stpy.random_process import RandomProcess
-from stpy.cost_functions import CostFunction
-import stpy.helpers.helper as helper
 
 
-class GammaContProcess(RandomProcess):
+class GammaContProcess(Estimator):
 
 	def __init__(self, gamma=1, s=0.001, kappa=1., kernel="squared_exponential", diameter=1.0,
 				 groups=None, bounds=None, nu=2, safe=False, kernel_custom=None, d=1):

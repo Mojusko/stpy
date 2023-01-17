@@ -6,7 +6,6 @@ __version__ = "0.2"
 __email__ = "mojmir.mutny@inf.ethz.ch"
 __status__ = "DEV"
 
-
 """
 This file implements a polynomial embedding 
 	k(x,y) = \Phi(x)^\top \Phi(y)
@@ -35,29 +34,29 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-import torch
-from sklearn.preprocessing import PolynomialFeatures
 import numpy as np
 import numpy.polynomial.chebyshev as cheb
-from stpy.borel_set import BorelSet
 import scipy.integrate as integrate
+import torch
+from sklearn.preprocessing import PolynomialFeatures
+
 
 class CustomEmbedding():
-	def __init__(self, d, embedding_function, m, groups = None, quadrature = "fixed"):
+	def __init__(self, d, embedding_function, m, groups=None, quadrature="fixed"):
 		self.d = d
 		self.groups = groups
 		self.embedding_function = embedding_function
 		self.m = m
 		self.quadrature = quadrature
 
-	def embed(self,x):
+	def embed(self, x):
 		return self.embedding_function(x)
 
 	def get_m(self):
 		return self.m
 
-	def integral(self,S):
-		varphi = torch.zeros(size = (self.m,1)).double()
+	def integral(self, S):
+		varphi = torch.zeros(size=(self.m, 1)).double()
 
 		if self.quadrature == "fixed":
 			if S.d == 1:
@@ -66,10 +65,10 @@ class CustomEmbedding():
 				varphi = torch.einsum('i,ij->j', weights, Z)
 				return varphi.view(-1, 1)
 			elif S.d == 2:
-				weights, nodes = S.return_legendre_discretization(n = 50)
+				weights, nodes = S.return_legendre_discretization(n=50)
 				Z = self.embed(nodes)
-				varphi = torch.einsum('i,ij->j',weights,Z)
-				return varphi.view(-1,1)
+				varphi = torch.einsum('i,ij->j', weights, Z)
+				return varphi.view(-1, 1)
 		else:
 			if S.d == 1:
 				for i in range(self.m):
@@ -81,25 +80,26 @@ class CustomEmbedding():
 					Fi = lambda x: self.embed(x).view(-1)[i]
 					integrand = lambda x, y: Fi(torch.Tensor([x, y]).view(1, 2).double()).numpy()
 					val, status = integrate.dblquad(integrand, float(S.bounds[0, 0]), float(S.bounds[0, 1]),
-								lambda x: float(S.bounds[1, 0]),
-								lambda x: float(S.bounds[1, 1]), epsabs=1.49e-03, epsrel=1.49e-03)
+													lambda x: float(S.bounds[1, 0]),
+													lambda x: float(S.bounds[1, 1]), epsabs=1.49e-03, epsrel=1.49e-03)
 					varphi[i] = val
 			return varphi
 
 
 class PolynomialEmbedding():
 
-	def __init__(self, d, p, groups = None, include_bias = True):
+	def __init__(self, d, p, kappa=1., groups=None, include_bias=True):
 		self.d = d
 		self.p = p
+		self.kappa = kappa
 		self.groups = groups
-		self.compute(include_bias = include_bias)
+		self.compute(include_bias=include_bias)
 		self.include_bias = include_bias
 
-	def compute(self, include_bias = True):
-		self.poly = PolynomialFeatures(degree = self.p, include_bias = include_bias)
+	def compute(self, include_bias=True):
+		self.poly = PolynomialFeatures(degree=self.p, include_bias=include_bias)
 		if self.groups is None:
-			self.poly.fit_transform(np.random.randn(1,self.d))
+			self.poly.fit_transform(np.random.randn(1, self.d))
 			self.degrees = torch.from_numpy(self.poly.powers_).double()
 			self.size = self.degrees.size()[0]
 		else:
@@ -113,10 +113,10 @@ class PolynomialEmbedding():
 				self.sizes.append(z.size()[0])
 				self.size += z.size()[0]
 
-	def embed_group(self,x, j):
-		(n,d) = x.size()
-		x = x.view(n,-1)
-		Phi = torch.zeros(size = (n,self.sizes[j]), dtype = torch.float64)
+	def embed_group(self, x, j):
+		(n, d) = x.size()
+		x = x.view(n, -1)
+		Phi = torch.zeros(size=(n, self.sizes[j]), dtype=torch.float64)
 		group = self.groups[j]
 		for i in range(n):
 			y = x[i, :]
@@ -126,35 +126,41 @@ class PolynomialEmbedding():
 
 	def get_sub_indices(self, group):
 		ind = []
-		for index,elem in enumerate(self.degrees):
-			z = torch.sum(elem[0:group-2])+torch.sum(elem[group+1:])
-			if (elem[group] >= 0.0) and (z<=0.):
+		for index, elem in enumerate(self.degrees):
+			z = torch.sum(elem[0:group - 2]) + torch.sum(elem[group + 1:])
+			if (elem[group] >= 0.0) and (z <= 0.):
 				ind.append(index)
 		return ind
 
-	def embed(self,x):
-		(n,d) = x.size()
-		#zero = torch.pow(x[0,:] * 0, self.degrees)
-		Phi = torch.zeros(size = (n,self.size), dtype = torch.float64)
+	def embed(self, x):
+		(n, d) = x.size()
+		# zero = torch.pow(x[0,:] * 0, self.degrees)
+		Phi = torch.zeros(size=(n, self.size), dtype=torch.float64)
 
 		if self.groups is None:
 			for i in range(n):
-				y = x[i,:]
-				Phi[i,:] =  torch.prod(torch.pow(y,self.degrees),dim = 1)
+				y = x[i, :]
+				Phi[i, :] = torch.prod(torch.pow(y, self.degrees), dim=1)
 		else:
 			for i in range(n):
-				y = x[i,:]
-				for j,group in enumerate(self.groups):
-					z = y[group].view(1,len(group))
+				y = x[i, :]
+				for j, group in enumerate(self.groups):
+					z = y[group].view(1, len(group))
 					start = int(np.sum(self.sizes[0:j]))
-					end = np.sum(self.sizes[0:j+1])
-					Phi[i,start:end] =  torch.prod(torch.pow(z,self.degrees[j]), dim = 1).view(-1)
-		return Phi
+					end = np.sum(self.sizes[0:j + 1])
+					Phi[i, start:end] = torch.prod(torch.pow(z, self.degrees[j]), dim=1).view(-1)
+		return np.sqrt(self.kappa) * Phi
+
+	def derivative_1(self, x):
+		pass
+
+	def derivative_2(self, x):
+		pass
 
 
 class ChebyschevEmbedding():
 
-	def __init__(self, d, p, groups = None, include_bias = True):
+	def __init__(self, d, p, groups=None, include_bias=True):
 		self.d = d
 		self.p = p
 		self.groups = groups
@@ -162,46 +168,51 @@ class ChebyschevEmbedding():
 		self.poly = cheb.Chebyshev(self.c)
 		self.size = self.p
 
-	def embed(self,x):
-		out = np.zeros(shape = (int(x.size()[0]),self.p) )
+	def embed(self, x):
+		out = np.zeros(shape=(int(x.size()[0]), self.p))
 		z = None
-		for p in np.arange(1,self.p+1,1):
+		for p in np.arange(1, self.p + 1, 1):
 			c = np.ones(p)
-			if p>1:
+			if p > 1:
 				zold = z
 				z = cheb.chebval(x.numpy(), c)
-				out[:,p-1] = (z - zold).reshape(-1)
+				out[:, p - 1] = (z - zold).reshape(-1)
 			else:
-				z = cheb.chebval(x.numpy(),c)
-				out[:,p-1] = z.reshape(-1)
+				z = cheb.chebval(x.numpy(), c)
+				out[:, p - 1] = z.reshape(-1)
 		return torch.from_numpy(out)
+
+	def derivative_1(self, x):
+		pass
+
+	def derivative_2(self, x):
+		pass
 
 
 if __name__ == "__main__":
 	d = 2
 	p = 4
-	emb = PolynomialEmbedding(d,p, groups = [[0],[1]])
-	x1 = torch.randn(size = (1,d), dtype = torch.float64)
-	x2 = torch.randn(size = (1,d), dtype = torch.float64)
-	xc = torch.cat((x1,x2))
+	emb = PolynomialEmbedding(d, p, groups=[[0], [1]])
+	x1 = torch.randn(size=(1, d), dtype=torch.float64)
+	x2 = torch.randn(size=(1, d), dtype=torch.float64)
+	xc = torch.cat((x1, x2))
 
-	print (emb.embed(x1).size())
-	print (emb.embed(x2).size())
-	print (emb.embed(xc).size())
+	print(emb.embed(x1).size())
+	print(emb.embed(x2).size())
+	print(emb.embed(xc).size())
 
-
-	print ("--------")
+	print("--------")
 	emb = PolynomialEmbedding(d, p)
-	print (emb.get_sub_indices(0))
-	# d = 1
-	# emb = ChebyschevEmbedding(d,3)
-	# x1 = torch.randn(size = (1,d), dtype = torch.float64)
-	# x2 = torch.randn(size = (1,d), dtype = torch.float64)
-	# xc = torch.cat((x1,x2))
-	#
-	# print (xc)
-	# print (emb.embed(x1).size())
-	# print (emb.embed(x2).size())
-	# print (emb.embed(xc).size())
-	#
-	# print (emb.embed(xc))
+	print(emb.get_sub_indices(0))
+# d = 1
+# emb = ChebyschevEmbedding(d,3)
+# x1 = torch.randn(size = (1,d), dtype = torch.float64)
+# x2 = torch.randn(size = (1,d), dtype = torch.float64)
+# xc = torch.cat((x1,x2))
+#
+# print (xc)
+# print (emb.embed(x1).size())
+# print (emb.embed(x2).size())
+# print (emb.embed(xc).size())
+#
+# print (emb.embed(xc))

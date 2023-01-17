@@ -4,23 +4,25 @@ import numpy as np
 import scipy
 import torch
 from autograd_minimize import minimize
+from quadprog import solve_qp
+from torchmin import minimize as minimize_torch
+
 from stpy.embeddings.bernstein_embedding import BernsteinEmbedding, BernsteinSplinesEmbedding, \
 	BernsteinSplinesOverlapping
-from stpy.embeddings.bump_bases import PositiveNystromEmbedding, TriangleEmbedding, FaberSchauderEmbedding
+from stpy.embeddings.bump_bases import PositiveNystromEmbeddingBump, TriangleEmbedding, FaberSchauderEmbedding
+from stpy.embeddings.optimal_positive_basis import OptimalPositiveBasis
 from stpy.helpers.ellipsoid_algorithms import maximize_on_elliptical_slice
-from stpy.point_processes.positive_basis_estimator import RateEstimator
-from stpy.optim.custom_optimizers import newton_solve
-from torchmin import minimize as minimize_torch
-from torchmin import least_squares
-from stpy.helpers.posterior_sampling import tmg
-from quadprog import solve_qp
+from stpy.point_processes.rate_estimator import RateEstimator
 
-class PositiveRateEstimator(RateEstimator):
+
+class PoissonRateEstimator(RateEstimator):
 
 	def __init__(self, process, hierarchy, d=1, m=100, kernel_object=None, B=1., s=1., jitter=10e-8, b=0.,
 				 basis='triangle', estimator='likelihood', feedback='count-record', offset=0.1, uncertainty='laplace',
-				 approx=None, stepsize = None, embedding=None, beta=2., sampling='proximal+prox', peeking=True, constraints=True, var_cor_on=True,
-				 samples_nystrom=10000, inverted_constraint=False, steps=None, dual=True, no_anchor_points=1024, U = 1, opt='torch'):
+				 approx=None, stepsize=None, embedding=None, beta=2., sampling='proximal+prox', peeking=True,
+				 constraints=True, var_cor_on=True,
+				 samples_nystrom=15000, inverted_constraint=False, steps=None, dual=True, no_anchor_points=1024, U=1.,
+				 opt='torch'):
 
 		self.process = process
 		self.d = d
@@ -32,7 +34,7 @@ class PositiveRateEstimator(RateEstimator):
 		self.sampling = sampling
 		self.steps = steps
 		self.opt = opt
-
+		self.kernel_object = kernel_object
 		# set hierarchy
 		self.constraints = constraints
 		self.hierarchy = hierarchy
@@ -59,14 +61,17 @@ class PositiveRateEstimator(RateEstimator):
 			self.packing = BernsteinSplinesEmbedding(d, m, kernel_object=kernel_object, B=B, b=b, offset=offset,
 													 s=np.sqrt(jitter))
 		elif basis == 'nystrom':
-			self.packing = PositiveNystromEmbedding(d, m, kernel_object=kernel_object, B=B, b=b, offset=offset,
-													s=np.sqrt(jitter), samples=samples_nystrom)
+			self.packing = PositiveNystromEmbeddingBump(d, m, kernel_object=kernel_object, B=B, b=b, offset=offset,
+														s=np.sqrt(jitter), samples=samples_nystrom)
 		elif basis == 'overlap-splines':
 			self.packing = BernsteinSplinesOverlapping(d, m, kernel_object=kernel_object, B=B, b=b, offset=offset,
 													   s=np.sqrt(jitter))
 		elif basis == 'faber':
 			self.packing = FaberSchauderEmbedding(d, m, kernel_object=kernel_object, B=B, b=b, offset=offset,
 												  s=np.sqrt(jitter))
+		elif basis == "optimal-positive":
+			self.packing = OptimalPositiveBasis(d, m, kernel_object=kernel_object, B=B, b=b, offset=offset,
+												s=np.sqrt(jitter), samples=samples_nystrom)
 		elif basis == "custom":
 			self.packing = embedding
 		else:
@@ -132,7 +137,7 @@ class PositiveRateEstimator(RateEstimator):
 		else:
 			l, _, u = self.get_constraints()
 			Gamma_half = self.cov()
-			rate = Gamma_half @ torch.from_numpy(u)
+			rate = Gamma_half @ u
 
 		if self.feedback == 'histogram':
 			val = self.packing.integral(new_data[0]) @ rate * new_data[2]
@@ -181,38 +186,6 @@ class PositiveRateEstimator(RateEstimator):
 	def cov(self, inverse=False):
 		return self.packing.cov(inverse=inverse)
 
-	def get_m(self):
-		return self.packing.get_m()
-
-	def mean_rate(self, S, n=128):
-		xtest = S.return_discretization(n)
-		if self.rate is not None:
-			return self.packing.embed(xtest) @ self.rate.view(-1, 1)
-		else:
-			return self.packing.embed(xtest)[:, 0].view(-1, 1) * 0 + self.b
-
-	def mean_rate_points(self, xtest):
-		if self.rate is not None:
-			return self.packing.embed(xtest) @ self.rate.view(-1, 1)
-		else:
-			return self.packing.embed(xtest)[:, 0].view(-1, 1) * 0 + self.b
-
-	def mean_set(self, S, dt=1):
-		phi = self.packing.integral(S) * dt
-		map = phi @ self.rate.view(-1, 1)
-		return map
-
-	def rate_value(self, x, dt=1):
-		phi = self.packing.embed(x) * dt
-
-		if self.rate is not None:
-			map = phi @ self.rate.view(-1, 1)
-		else:
-			print("Rate function not fitted!")
-			map = 0 * phi[:, 0].view(-1, 1) + self.b
-
-		return map
-
 	def fit_gp(self, threads=4):
 
 		if self.data is not None:
@@ -231,6 +204,7 @@ class PositiveRateEstimator(RateEstimator):
 
 				elif self.estimator == "bins":
 					self.penalized_likelihood_bins()
+
 				else:
 					raise AssertionError("wrong name.")
 
@@ -253,7 +227,7 @@ class PositiveRateEstimator(RateEstimator):
 		else:
 			l, Lambda, u = self.get_constraints()
 			Gamma_half = self.cov()
-			self.rate = None
+			self.rate = l
 
 	def sample_mirror_langevin(self, steps=500, verbose=False):
 
@@ -272,8 +246,6 @@ class PositiveRateEstimator(RateEstimator):
 
 		invGamma = invGamma_half.T @ invGamma_half
 		transform = lambda y: S @ torch.tanh(y) + v
-
-
 
 		if self.feedback == "count-record" and self.dual == False:
 			if obs is not None:
@@ -325,8 +297,7 @@ class PositiveRateEstimator(RateEstimator):
 		y.data = torch.inverse(S2) @ (y.data - v2)
 		y.data = torch.atanh(y.data)
 
-
-		W = S.T @ invGamma_half.T @ self.construct_covariance_matrix_laplace() @invGamma_half @ S
+		W = S.T @ invGamma_half.T @ self.construct_covariance_matrix_laplace() @ invGamma_half @ S
 		L = float(scipy.sparse.linalg.eigsh(W.numpy(), k=1, which='LM', return_eigenvectors=False, tol=1e-8))
 		eta = 0.05 / (L + 1)
 
@@ -345,9 +316,7 @@ class PositiveRateEstimator(RateEstimator):
 
 		self.sampled_theta = invGamma_half @ transform(y.data)
 
-
-
-	def sample_projected_langevin(self, steps=300, verbose=False, stepsize = None):
+	def sample_projected_langevin(self, steps=300, verbose=False, stepsize=None):
 		"""
 		:param burn_in:
 		:return:
@@ -400,15 +369,15 @@ class PositiveRateEstimator(RateEstimator):
 								  + torch.sum(self.phis, dim=0).view(-1, 1) + self.s * theta.view(-1, 1)
 
 		theta = self.rate.view(-1, 1)
-		W = self.construct_covariance_matrix_laplace(minimal = True)
+		W = self.construct_covariance_matrix_laplace(minimal=True)
 		L = float(scipy.sparse.linalg.eigsh(W.numpy(), k=1, which='LM', return_eigenvectors=False, tol=1e-5))
 
 		if stepsize is None:
-			eta = 0.5 / (L+1)
+			eta = 0.5 / (L + 1)
 		else:
-			eta = np.minimum(1,stepsize * 0.5 / L)
+			eta = np.minimum(1, stepsize * 0.5 / L)
 
-		print (eta)
+		print(eta)
 		for k in range(steps):
 			w = torch.randn(size=(self.get_m(), 1)).double()
 			theta = prox(theta - eta * nabla(theta) + np.sqrt(2 * eta) * w)
@@ -418,33 +387,21 @@ class PositiveRateEstimator(RateEstimator):
 
 		self.sampled_theta = theta
 
-
-	def sample_proximal_langevin_prox(self, steps=300, verbose=False, stepsize = None):
+	def sample_proximal_langevin_prox(self, steps=300, verbose=False, stepsize=None):
 		"""
 		:param burn_in:
 		:return:
 		"""
 
-		Gamma_half,invGamma_half = self.packing.cov(inverse = True)
-		#invGamma = invGamma_half.T @ invGamma_half
+		Gamma_half, invGamma_half = self.packing.cov(inverse=True)
+		# invGamma = invGamma_half.T @ invGamma_half
 		l, Lambda, u = self.get_constraints()
 		Lambda = Lambda @ Gamma_half.numpy()
 
-		# def prox(x):
-		# 	z = x.numpy()
-		# 	theta = cp.Variable((self.get_m(), 1))
-		# 	objective = cp.Minimize(cp.sum_squares(z - theta))
-		#
-		# 	constraints = []
-		# 	constraints.append(Lambda @ theta >= l.reshape(-1, 1))
-		# 	constraints.append(Lambda @ theta <= u.reshape(-1, 1))
-		# 	prob = cp.Problem(objective, constraints)
-		# 	prob.solve(solver=cp.OSQP, warm_start=True, verbose=False, eps_abs=1e-3, eps_rel=1e-3)
-		# 	return torch.from_numpy(theta.value)
-
 		def prox(x):
-			res = solve_qp(np.eye(self.get_m()),x.numpy().reshape(-1),C = Gamma_half.numpy(),b = l, factorized = True)
-			return torch.from_numpy(res[0]).view(-1,1)
+			res = solve_qp(np.eye(self.get_m()), x.numpy().reshape(-1), C=Gamma_half.numpy(), b=l.numpy(),
+						   factorized=True)
+			return torch.from_numpy(res[0]).view(-1, 1)
 
 		# theta_n = cp.Variable((self.get_m(), 1))
 		# x = cp.Parameter((self.get_m(), 1))
@@ -458,9 +415,9 @@ class PositiveRateEstimator(RateEstimator):
 		#
 		# prob = cp.Problem(objective, constraints)
 
-
 		# def prox(x):
 		# 	return Gamma_half @ torch.from_numpy(scipy.optimize.nnls(invGamma.numpy(), (invGamma_half@x).numpy().reshape(-1), maxiter = 1000)[0]).view(-1,1)
+
 		if self.data is not None:
 			if self.feedback == "count-record" and self.dual == False:
 				if self.observations is not None:
@@ -490,31 +447,29 @@ class PositiveRateEstimator(RateEstimator):
 
 
 			elif self.feedback == "histogram":
-				nabla = lambda theta: -torch.sum(torch.diag((1. / (self.phis @ theta).view(-1)) * self.counts) @ self.phis,
-												 dim=0).view(-1, 1) \
+				nabla = lambda theta: -torch.sum(
+					torch.diag((1. / (self.phis @ theta).view(-1)) * self.counts) @ self.phis,
+					dim=0).view(-1, 1) \
 									  + torch.sum(self.phis, dim=0).view(-1, 1) + self.s * theta.view(-1, 1)
 		else:
-			nabla = lambda theta: self.s*theta.view(-1,1)
-
+			nabla = lambda theta: self.s * theta.view(-1, 1)
 
 		if self.rate is not None:
 			theta = self.rate.view(-1, 1)
 		else:
-			theta = self.b + 0.05 * torch.rand(size=(self.get_m(), 1), dtype=torch.float64, requires_grad=False).view(-1,1) ** 2
+			theta = self.b + 0.05 * torch.rand(size=(self.get_m(), 1), dtype=torch.float64, requires_grad=False).view(
+				-1, 1) ** 2
 
 		for k in range(steps):
 			w = torch.randn(size=(self.get_m(), 1)).double()
 
-
 			# calculate proper step-size
-			W = self.construct_covariance_matrix_laplace(theta = theta)
-			L = float(scipy.sparse.linalg.eigsh(W.numpy(), k=1, which='LM', return_eigenvectors=False, tol=1e-5))
-
+			W = self.construct_covariance_matrix_laplace(theta=theta)
+			L = float(scipy.sparse.linalg.eigsh(W.numpy(), k=1, which='LM', return_eigenvectors=False, tol=1e-3))
 			if stepsize is not None:
 				eta = 0.5 * stepsize / L
 			else:
 				eta = 0.5 / L
-
 
 			# prox calculate
 			# x.value = theta.numpy()
@@ -522,8 +477,8 @@ class PositiveRateEstimator(RateEstimator):
 			# proximal_theta = torch.from_numpy(theta_n.value)
 
 			# update step
-#			theta = 0.5 * theta - eta * nabla(theta) + 0.5 * proximal_theta + np.sqrt(2 * eta) * w
-			
+			#			theta = 0.5 * theta - eta * nabla(theta) + 0.5 * proximal_theta + np.sqrt(2 * eta) * w
+
 			# update step
 			theta = 0.5 * theta - eta * nabla(theta) + 0.5 * prox(theta) + np.sqrt(2 * eta) * w
 			if verbose == True:
@@ -614,12 +569,7 @@ class PositiveRateEstimator(RateEstimator):
 
 		self.sampled_theta = prox(y.detach())
 
-
-
-
-
-	def sample_hessian_positive_langevin(self, steps=500, verbose=False, stepsize = None):
-
+	def sample_hessian_positive_langevin(self, steps=500, verbose=False, stepsize=None):
 
 		if self.data is not None:
 			if self.feedback == "count-record" and self.dual == False:
@@ -651,13 +601,12 @@ class PositiveRateEstimator(RateEstimator):
 
 
 			elif self.feedback == "histogram":
-				nabla = lambda theta: -torch.sum(torch.diag((1. / (self.phis @ theta).view(-1)) * self.counts) @ self.phis,
-												 dim=0).view(-1, 1) \
+				nabla = lambda theta: -torch.sum(
+					torch.diag((1. / (self.phis @ theta).view(-1)) * self.counts) @ self.phis,
+					dim=0).view(-1, 1) \
 									  + torch.sum(self.phis, dim=0).view(-1, 1) + self.s * theta.view(-1, 1)
 		else:
-			nabla = lambda theta: 	self.s * theta.view(-1, 1)
-
-
+			nabla = lambda theta: self.s * theta.view(-1, 1)
 
 		Gamma_half = self.packing.cov()
 		lz, Lambda, u = self.get_constraints()
@@ -680,11 +629,10 @@ class PositiveRateEstimator(RateEstimator):
 		if stepsize is None:
 			eta = 1. / (L + 1)
 		else:
-			eta = stepsize / (L+1)
+			eta = stepsize / (L + 1)
 
-
-		D = lambda x: torch.diag(1. / torch.abs(Lambda @ x ).view(-1))
-		sqrt_hessian = lambda x:  Lambda @ D(x)
+		D = lambda x: torch.diag(1. / torch.abs(Lambda @ x).view(-1))
+		sqrt_hessian = lambda x: Lambda @ D(x)
 
 		phi = lambda x: -torch.sum(torch.log(Lambda @ x))
 		nabla_phi = lambda x: -torch.einsum('i,ij->j', 1. / (Lambda @ x).view(-1), Lambda)
@@ -719,20 +667,11 @@ class PositiveRateEstimator(RateEstimator):
 
 		self.sampled_theta = y.data
 
-
-
-
-
-
-
-
-
-	def sample_mla_prime(self, steps = 100, verbose = False, stepsize = None):
-		Gamma_half, invGamma_half = self.packing.cov(inverse = True)
+	def sample_mla_prime(self, steps=100, verbose=False, stepsize=None):
+		Gamma_half, invGamma_half = self.packing.cov(inverse=True)
 		invGamma = invGamma_half.T @ invGamma_half
 		l, Lambda, u = self.get_constraints()
 		Lambda = torch.from_numpy(Lambda) @ Gamma_half
-
 
 		if self.data is not None:
 			if self.feedback == "count-record" and self.dual == False:
@@ -747,11 +686,10 @@ class PositiveRateEstimator(RateEstimator):
 					nabla = lambda theta: torch.sum(phis, dim=0).view(-1, 1) + self.s * invGamma @ theta.view(-1, 1)
 
 		else:
-			nabla = lambda theta: 	self.s * invGamma @ theta.view(-1, 1)
+			nabla = lambda theta: self.s * invGamma @ theta.view(-1, 1)
 
-
-
-		y = self.b + 0.05 * torch.rand(size=(self.get_m(), 1), dtype=torch.float64, requires_grad=True).reshape(-1,1) ** 2
+		y = self.b + 0.05 * torch.rand(size=(self.get_m(), 1), dtype=torch.float64, requires_grad=True).reshape(-1,
+																												1) ** 2
 		# if self.rate is not None:
 		# 	y.data = Gamma_half @ self.rate.data.view(-1,1) + y.data
 		# else:
@@ -761,15 +699,15 @@ class PositiveRateEstimator(RateEstimator):
 			print("initial point")
 			print(y.data)
 
-		W = invGamma_half.T@self.construct_covariance_matrix_laplace()@invGamma_half
+		W = invGamma_half.T @ self.construct_covariance_matrix_laplace() @ invGamma_half
 		L = float(scipy.sparse.linalg.eigsh(W.numpy(), k=1, which='LM', return_eigenvectors=False, tol=1e-5))
 
 		if stepsize is None:
 			eta = 1. / (L + 1)
 		else:
-			eta = stepsize / (L+1)
+			eta = stepsize / (L + 1)
 
-		from stpy.sampling.sampling_helper import get_increment
+		from stpy.approx_inference.sampling_helper import get_increment
 		for k in range(steps):
 
 			nabla_val = nabla(y)
@@ -782,27 +720,24 @@ class PositiveRateEstimator(RateEstimator):
 			# prob = cp.Problem(objective, constraints)
 			# prob.solve(solver = cp.MOSEK)
 
-			w0 = (eta * nabla_val.data + 1./y.data)
+			w0 = (eta * nabla_val.data + 1. / y.data)
 			# initial point for the solve
-			#w0 = -1./( torch.from_numpy(x.value))
+			# w0 = -1./( torch.from_numpy(x.value))
 
 			# simulate
-			f = lambda w,n: n/torch.abs(w)
-			w = get_increment(eta, 1000, f, w0, path = False)
+			f = lambda w, n: n / torch.abs(w)
+			w = get_increment(eta, 1000, f, w0, path=False)
 
 			# back mirror map
-			y.data =  (-1./w)
-
+			y.data = (-1. / w)
 
 			if verbose:
 				print("Iter:", k)
 				print(y.T)
 
-		self.sampled_theta = invGamma_half @  y.data
+		self.sampled_theta = invGamma_half @ y.data
 
-
-
-	def sample_hessian_positive_langevin_2(self, steps=500, verbose=False, stepsize = None, preconditioner = True):
+	def sample_hessian_positive_langevin_2(self, steps=500, verbose=False, stepsize=None, preconditioner=True):
 
 		Gamma_half, invGamma_half = self.packing.cov(inverse=True)
 		invGamma = invGamma_half @ invGamma_half
@@ -814,37 +749,37 @@ class PositiveRateEstimator(RateEstimator):
 				phis = self.phis @ invGamma_half
 
 				if self.observations is not None:
-					nabla = lambda y: -torch.einsum('i,ij->j', 1. / (observations  @ y).view(-1),
-													observations ).view(-1, 1) + \
+					nabla = lambda y: -torch.einsum('i,ij->j', 1. / (observations @ y).view(-1),
+													observations).view(-1, 1) + \
 									  torch.sum(phis, dim=0).view(-1, 1) \
 									  + self.s * invGamma @ y.view(-1, 1)
 				else:
 					nabla = lambda theta: torch.sum(phis, dim=0).view(-1, 1) + self.s * invGamma @ theta.view(-1, 1)
 
 		else:
-			nabla =  lambda theta: self.s * invGamma @ theta.view(-1, 1)
+			nabla = lambda theta: self.s * invGamma @ theta.view(-1, 1)
 
 		y = torch.rand(size=(self.get_m(), 1), dtype=torch.float64, requires_grad=True).view(-1) ** 2
-		#if self.rate is not None:
+		# if self.rate is not None:
 		#	y.data = Gamma_half @ self.rate.data + y.data
 
 		if verbose == True:
 			print("initial point")
 			print(y.data)
 
-		W = self.construct_covariance_matrix_laplace(minimal = True)
+		W = self.construct_covariance_matrix_laplace(minimal=True)
 		L = float(scipy.sparse.linalg.eigsh(W.numpy(), k=1, which='LM', return_eigenvectors=False, tol=1e-5))
 
 		if stepsize is None:
 			eta = 1. / (L + 1)
 		else:
-			eta = stepsize / (L+1)
+			eta = stepsize / (L + 1)
 
 		for k in range(steps):
-			w = torch.randn(size=(self.get_m(), 1)).double()/torch.abs(y.data).view(-1,1)
+			w = torch.randn(size=(self.get_m(), 1)).double() / torch.abs(y.data).view(-1, 1)
 			nabla_val = nabla(y)
-			z = -1./y.data.view(-1, 1) + self.b - eta * Gamma_half @ nabla_val + np.sqrt(2 * eta) * Gamma_half @ w
-			y.data = -1./z + self.b
+			z = -1. / y.data.view(-1, 1) + self.b - eta * Gamma_half @ nabla_val + np.sqrt(2 * eta) * Gamma_half @ w
+			y.data = -1. / z + self.b
 
 			if verbose:
 				print("Iter:", k)
@@ -852,7 +787,7 @@ class PositiveRateEstimator(RateEstimator):
 
 		self.sampled_theta = invGamma_half @ y.data
 
-	def sample_newton_langevin(self, steps = 1000, stepsize = None, verbose = False):
+	def sample_newton_langevin(self, steps=1000, stepsize=None, verbose=False):
 		Gamma_half, invGamma_half = self.packing.cov(inverse=True)
 		invGamma = invGamma_half @ invGamma_half
 		if self.data is not None:
@@ -863,40 +798,41 @@ class PositiveRateEstimator(RateEstimator):
 				phis = self.phis @ invGamma_half
 
 				if self.observations is not None:
-					nabla = lambda y,bar: -torch.einsum('i,ij->j', 1. / (observations @ y).view(-1),
-													observations).view(-1, 1) + \
-									  torch.sum(phis, dim=0).view(-1, 1) \
-									  + self.s * invGamma @ y.view(-1, 1) - bar*1./y
+					nabla = lambda y, bar: -torch.einsum('i,ij->j', 1. / (observations @ y).view(-1),
+														 observations).view(-1, 1) + \
+										   torch.sum(phis, dim=0).view(-1, 1) \
+										   + self.s * invGamma @ y.view(-1, 1) - bar * 1. / y
 				else:
-					nabla = lambda theta,bar: torch.sum(phis , dim=0).view(-1,1) + self.s * invGamma @ theta.view(
-						-1, 1) - bar*1./theta
+					nabla = lambda theta, bar: torch.sum(phis, dim=0).view(-1, 1) + self.s * invGamma @ theta.view(
+						-1, 1) - bar * 1. / theta
 
 		else:
-			nabla = lambda theta,bar : self.s * invGamma @ theta.view(-1, 1) - bar*1./theta
+			nabla = lambda theta, bar: self.s * invGamma @ theta.view(-1, 1) - bar * 1. / theta
 
-		y = 0.05*torch.rand(size=(self.get_m(), 1), dtype=torch.float64, requires_grad=True).view(-1,1) ** 2
+		y = 0.05 * torch.rand(size=(self.get_m(), 1), dtype=torch.float64, requires_grad=True).view(-1, 1) ** 2
 
 		barrier = 10.
-		#hessian = lambda theta,bar: torch.einsum('ik,k,kj->ij',observations.T,(observations@theta).view(-1),observations) + invGamma + bar/theta**2
-		hessian = lambda theta, bar: observations.T@torch.diag(1/(observations@theta).view(-1)**2)@observations + invGamma + torch.diag(bar/theta.view(-1)**2)
-		hessian_sqrt = lambda theta,bar: torch.cholesky(hessian(theta,bar))
+		# hessian = lambda theta,bar: torch.einsum('ik,k,kj->ij',observations.T,(observations@theta).view(-1),observations) + invGamma + bar/theta**2
+		hessian = lambda theta, bar: observations.T @ torch.diag(
+			1 / (observations @ theta).view(-1) ** 2) @ observations + invGamma + torch.diag(bar / theta.view(-1) ** 2)
+		hessian_sqrt = lambda theta, bar: torch.cholesky(hessian(theta, bar))
 		eta = 1.
-
 
 		for k in range(steps):
 			w = torch.randn(size=(self.get_m(), 1)).double()
-			nabla_val = nabla(y,barrier)
-			y.data = y.data - torch.linalg.solve(hessian(y.data,barrier),nabla_val) + np.sqrt(2 * eta) * torch.linalg.solve(hessian_sqrt(y.data,barrier), w)
+			nabla_val = nabla(y, barrier)
+			y.data = y.data - torch.linalg.solve(hessian(y.data, barrier), nabla_val) + np.sqrt(
+				2 * eta) * torch.linalg.solve(hessian_sqrt(y.data, barrier), w)
 
 			if verbose:
 				print("Iter:", k)
 				print(y.T)
 
 		self.sampled_theta = invGamma_half @ y.data
-		#self.sampled_theta = y.data
 
+	# self.sampled_theta = y.data
 
-	def sample_hmc(self, steps=1000,stepsize =None,  verbose=False):
+	def sample_hmc(self, steps=1000, stepsize=None, verbose=False):
 		import hamiltorch
 		phis = self.phis
 		if self.feedback == "count-record" and self.dual == False:
@@ -909,7 +845,7 @@ class PositiveRateEstimator(RateEstimator):
 				func = lambda y: - torch.sum(phis @ y).view(-1, 1) \
 								 - self.s * y.T @ y
 
-		num_samples= 1
+		num_samples = 1
 		num_steps_per_sample = steps
 		if stepsize is None:
 			step_size = 1e-8
@@ -918,13 +854,28 @@ class PositiveRateEstimator(RateEstimator):
 
 		params_init = self.rate
 		self.sample_theta = hamiltorch.sample(log_prob_func=func,
-									   params_init=params_init,
-									   num_samples=num_samples,
-									   step_size=step_size,
-									   num_steps_per_sample=num_steps_per_sample)
-		print (self.sampled_theta)
+											  params_init=params_init,
+											  num_samples=num_samples,
+											  step_size=step_size,
+											  num_steps_per_sample=num_steps_per_sample)
+		print(self.sampled_theta)
 
-	def sample(self, verbose=False, steps=1000):
+	def sample_variational(self, xtest, accuracy=1e-4, verbose=False, samples=1):
+		from stpy.approx_inference.variational_mf import VMF_SGCP
+		cov_params = [self.kernel_object.kappa, self.kernel_object.gamma]
+		S_borders = np.array([[-1., 1.]])
+		num_inducing_points = self.m
+		num_integration_points = 256
+		X = self.x
+
+		var_mf_sgcp = VMF_SGCP(S_borders, X, cov_params, num_inducing_points,
+							   num_integration_points=num_integration_points,
+							   update_hyperparams=False, output=0, conv_crit=accuracy)
+		var_mf_sgcp.run()
+		sample_paths = var_mf_sgcp.sample_posterior(xtest, num_samples=1.)
+		return sample_paths
+
+	def sample(self, verbose=False, steps=1000, domain=None):
 		"""
 		:return:
 		"""
@@ -937,7 +888,7 @@ class PositiveRateEstimator(RateEstimator):
 			stepsize = None
 
 		l, Lambda, u = self.get_constraints()
-		print ("Sampling started.")
+		print("Sampling started.")
 		if self.rate is None:
 			self.fit_gp()
 
@@ -954,26 +905,25 @@ class PositiveRateEstimator(RateEstimator):
 		elif self.sampling == "mla_prime":
 			self.sample_mla_prime(steps=steps, verbose=verbose, stepsize=stepsize)
 		elif self.sampling == 'hmc':
-			self.sample_hmc(steps=steps, verbose=verbose, stepsize = stepsize)
+			self.sample_hmc(steps=steps, verbose=verbose, stepsize=stepsize)
+		elif self.sampling == 'polyia_variational':
+			self.sample_variational(accuracy=1. / steps, verbose=verbose)
 		else:
 			raise NotImplementedError("Sampling of such is not supported.")
 
 		print("Sampling finished.")
 
-	def sample_value(self, S):
-		"""
-		Given a pre-sampled value evaluate certain portions of the domain S
-		:param S:
-		:return:
-		"""
-		return self.packing.integral(S) @ self.sampled_theta
+	def sampled_lcb_ucb(self, xtest, samples=100, delta=0.1):
+		paths = []
+		for i in range(samples):
+			self.sample()
+			path = self.sample_path_points(xtest).view(1, -1)
+			paths.append(path)
 
-	def sample_path(self, S, n=128):
-		xtest = S.return_discretization(n)
-		return self.packing.embed(xtest) @ self.sampled_theta
-
-	def sample_path_points(self, xtest):
-		return self.packing.embed(xtest) @ self.sampled_theta.view(-1, 1)
+		paths = torch.cat(paths, dim=0)
+		lcb = torch.quantile(paths, delta, dim=0)
+		ucb = torch.quantile(paths, 1 - delta, dim=0)
+		return lcb, ucb
 
 	def penalized_likelihood_fast(self, threads=4):
 		l, Lambda, u = self.get_constraints()
@@ -1019,11 +969,12 @@ class PositiveRateEstimator(RateEstimator):
 
 		eps = 1e-4
 		res = minimize(objective, theta0.numpy(), backend='torch', method='L-BFGS-B',
-					   bounds=(l[0] + eps, u[0]), precision='float64', tol=1e-6,
-					   options={'ftol': 1e-06,
-								'gtol': 1e-06, 'eps': 1e-08,
+					   bounds=(l[0] + eps, u[0]), precision='float64', tol=1e-8,
+					   options={'ftol': 1e-08,
+								'gtol': 1e-08, 'eps': 1e-08,
 								'maxfun': 15000, 'maxiter': 15000,
 								'maxls': 20})
+
 		self.rate = invGamma_half @ torch.from_numpy(res.x)
 		print(res.message)
 		return self.rate
@@ -1169,13 +1120,14 @@ class PositiveRateEstimator(RateEstimator):
 		self.bucketized_counts = counts  # these are count each basic set has been sensed
 
 	def variance_correction(self, variance):
+
 		if self.var_cor_on == 1:
 
 			g = lambda B, k, mu: -0.5 * (B ** 2) / ((mu ** 2) * k) - B / (mu * k) + (np.exp(B / (k * mu)) - 1)
 			gn = lambda k: g(self.U, k, variance)
 
 			from scipy import optimize
-			k = optimize.bisect(gn, 1, 1000000)
+			k = optimize.bisect(gn, 1, 10000000)
 
 			return k
 		else:
@@ -1204,22 +1156,61 @@ class PositiveRateEstimator(RateEstimator):
 		selected_variances = variances[mask]
 		objective = cp.Minimize(
 			cp.sum_squares((cp.multiply((phis @ theta), tau[mask]) - observations) / (np.sqrt(selected_variances)))
-			+ self.s * cp.norm2(theta) ** 2)
+			+ 0.5 * self.s * cp.norm2(theta) ** 2)
 
 		constraints = []
 		Lambda = Lambda @ Gamma_half
-		constraints.append(Lambda @ theta >= l)
+		# constraints.append(Lambda @ theta >= l)
 		constraints.append(Lambda @ theta <= u)
+
 		prob = cp.Problem(objective, constraints)
 
 		prob.solve(solver=cp.MOSEK, warm_start=False, verbose=False,
 				   mosek_params={mosek.iparam.num_threads: threads,
-								 mosek.iparam.intpnt_solve_form: mosek.solveform.dual,
-								 mosek.dparam.intpnt_co_tol_pfeas: 1e-6,
-								 mosek.dparam.intpnt_co_tol_dfeas: 1e-6,
-								 mosek.dparam.intpnt_co_tol_rel_gap: 1e-6})
-
+								 mosek.iparam.intpnt_solve_form: mosek.solveform.primal,
+								 mosek.dparam.intpnt_co_tol_pfeas: 1e-4,
+								 mosek.dparam.intpnt_co_tol_dfeas: 1e-4,
+								 mosek.dparam.intpnt_co_tol_rel_gap: 1e-4})
+		print(prob.status)
 		self.rate = torch.from_numpy(theta.value)
+		return self.rate
+
+	def least_sqaures_weighted_fast(self, threads=4):
+
+		l, Lambda, u = self.get_constraints()
+		Gamma_half, invGamma_half = self.cov(inverse=True)
+
+		mask = self.bucketized_counts > 0
+		observations = self.total_bucketized_obs[mask]
+		phis = self.varphis[mask, :]
+		tau = self.total_bucketized_time
+
+		variances = self.variances.view(-1)
+		for i in range(variances.size()[0]):
+			if mask[i] > 0:
+				variances[i] = variances[i] * tau[i] * self.variance_correction(variances[i] * tau[i])
+		selected_variances = variances[mask]
+
+		def objective(theta):
+			return torch.sum(
+				((tau[mask] * (phis @ invGamma_half @ theta) - observations) / (np.sqrt(selected_variances))) ** 2) \
+				   + self.s * 0.5 * torch.sum((invGamma_half @ theta) ** 2)
+
+		if self.rate is not None:
+			theta0 = torch.zeros(size=(self.get_m(), 1)).view(-1).double()
+			theta0.data = Gamma_half @ self.rate.data
+		else:
+			theta0 = torch.zeros(size=(self.get_m(), 1)).view(-1).double()
+
+		eps = 1e-4
+		res = minimize(objective, theta0.numpy(), backend='torch', method='L-BFGS-B',
+					   bounds=(l[0] + eps, u[0]), precision='float64', tol=1e-8,
+					   options={'ftol': 1e-06,
+								'gtol': 1e-06, 'eps': 1e-08,
+								'maxfun': 15000, 'maxiter': 15000,
+								'maxls': 20})
+		self.rate = invGamma_half @ torch.from_numpy(res.x)
+
 		return self.rate
 
 	def least_squares_weighted_integral(self, threads=4):
@@ -1337,7 +1328,7 @@ class PositiveRateEstimator(RateEstimator):
 
 	def update_variances(self, value=False, force=False):
 		self.approx_fit = True
-		if (self.feedback == "count-record") or force == True:
+		if (self.feedback == "count-record" and self.estimator=="least-sq") or force == True:
 			print("updating variance")
 			for index, set in enumerate(self.basic_sets):
 				if value == False:
@@ -1465,15 +1456,14 @@ class PositiveRateEstimator(RateEstimator):
 
 	def map_lcb_ucb_approx_action(self, S, dt=1., beta=2.):
 		phi = self.packing.integral(S)
-		map = phi @ self.rate
+		map = dt * phi @ self.rate
 
 		ucb = map + beta * np.sqrt(phi @ self.W_inv_approx @ phi.T)
-		ucb = np.minimum(dt * ucb, self.B * S.volume() * dt)
+		# ucb = np.minimum(dt * ucb, self.B * S.volume() * dt)
 
 		lcb = map - beta * np.sqrt(phi @ self.W_inv_approx @ phi.T)
-		lcb = np.maximum(dt * lcb, self.b * S.volume() * dt)
-
-		return dt * map, lcb, ucb
+		# lcb = np.maximum(dt * lcb, self.b * S.volume() * dt)
+		return map, lcb, ucb
 
 	def fit_ellipsoid_approx(self):
 
@@ -1499,7 +1489,7 @@ class PositiveRateEstimator(RateEstimator):
 			raise NotImplementedError("This estimator is not implemented.")
 		return self.W
 
-	def construct_covariance_matrix_laplace(self,  theta = None):
+	def construct_covariance_matrix_laplace(self, theta=None):
 		W = torch.zeros(size=(self.get_m(), self.get_m())).double()
 
 		if self.feedback == "count-record":
@@ -1675,6 +1665,7 @@ class PositiveRateEstimator(RateEstimator):
 				   self.B + 0 * xtest[:, 0].view(-1, 1)
 
 		self.fit_ellipsoid_approx()
+		self.fit_ellipsoid_approx()
 
 		Phi = self.packing.embed(xtest).double()
 		map = Phi @ self.rate
@@ -1736,7 +1727,7 @@ class PositiveRateEstimator(RateEstimator):
 
 		return map, lcb, ucb
 
-	def map_lcb_ucb_likelihood_ratio(self, S, n, delta = 0.1, current = False):
+	def map_lcb_ucb_likelihood_ratio(self, S, n, delta=0.1, current=False):
 		xtest = S.return_discretization(n)
 
 		if self.data is None:
@@ -1768,8 +1759,6 @@ class PositiveRateEstimator(RateEstimator):
 			else:
 				raise NotImplementedError("Not compatible with given feedback model ")
 
-
-
 		l, Lambda, u = self.get_constraints()
 		Gamma_half = self.cov().numpy()
 		Lambda = Lambda @ Gamma_half
@@ -1779,7 +1768,6 @@ class PositiveRateEstimator(RateEstimator):
 
 			theta = cp.Variable(self.get_m())
 
-
 			objective_min = cp.Minimize(x @ theta)
 			objective_max = cp.Maximize(x @ theta)
 
@@ -1787,18 +1775,17 @@ class PositiveRateEstimator(RateEstimator):
 			constraints.append(Lambda @ theta >= l)
 			constraints.append(Lambda @ theta <= u)
 
-
 			if self.feedback == 'count-record':
 				if self.observations is not None:
 					observations = self.observations.numpy()
 
 					constraints.append(
-					-cp.sum(cp.log(observations @ theta)) +
-					cp.sum(phis @ theta) + self.s * 0.5 * cp.sum_squares(theta)
-					<= v)
+						-cp.sum(cp.log(observations @ theta)) +
+						cp.sum(phis @ theta) + self.s * 0.5 * cp.sum_squares(theta)
+						<= v)
 				else:
-					constraints.append(	cp.sum(phis @ theta) + self.s * 0.5 * cp.sum_squares(theta)
-					 <= v)
+					constraints.append(cp.sum(phis @ theta) + self.s * 0.5 * cp.sum_squares(theta)
+									   <= v)
 
 			elif self.feedback == 'histogram':
 				constraints.append(
@@ -1808,11 +1795,9 @@ class PositiveRateEstimator(RateEstimator):
 			else:
 				raise NotImplementedError("Does not exist.")
 
-
 			prob = cp.Problem(objective_min, constraints)
 			prob.solve(solver=cp.MOSEK, warm_start=False, verbose=False)
 			lcb[i, 0] = float(np.dot(theta.value, x))
-
 
 			prob = cp.Problem(objective_max, constraints)
 			prob.solve(solver=cp.MOSEK, warm_start=False, verbose=False)

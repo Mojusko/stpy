@@ -1,26 +1,26 @@
-import torch
-import numpy as np
-import mosek
-from stpy.helpers.helper import interval, cartesian, symsqrt
-import matplotlib.pyplot as plt
-from stpy.kernels import KernelFunction
 import cvxpy as cp
-from stpy.random_process import RandomProcess
-from stpy.borel_set import BorelSet
+import mosek
+import numpy as np
 import scipy
-from scipy.interpolate import BPoly
+import torch
 
-class PositiveEmbedding(RandomProcess):
+from stpy.borel_set import BorelSet
+from stpy.embeddings.embedding import Embedding
+from stpy.helpers.helper import cartesian
 
-	def __init__(self, d,m, kernel_object = None, interval = (-1,1), B=1, b =0, s = 0.001, offset = 0.):
+
+class PositiveEmbedding(Embedding):
+
+	def __init__(self, d, m, kernel_object=None, interval=(-1, 1), B=1, b=0, s=0.001, offset=0.):
 		self.d = d
 		self.m = m
 		self.b = b
 		self.size = self.get_m()
 		self.interval = interval
 		if kernel_object is None:
-			self.kernel_object = KernelFunction()
-			self.kernel = lambda x,y: self.kernel_object.kernel(x,y)
+			#self.kernel_object = KernelFunction()
+			#self.kernel = lambda x, y: self.kernel_object.kernel(x, y)
+			self.kernel = None
 		else:
 			self.kernel_object = kernel_object
 			self.kernel = self.kernel_object.kernel
@@ -28,26 +28,30 @@ class PositiveEmbedding(RandomProcess):
 		self.s = s
 		self.offset = offset
 
-		self.interval = (self.interval[0] - offset,  self.interval[1] + offset)
+		self.interval = (self.interval[0] - offset, self.interval[1] + offset)
 
-		self.borel_set = BorelSet(d = 1, bounds = torch.Tensor([[self.interval[0],self.interval[1]]]).double())
+		self.borel_set = BorelSet(d=1, bounds=torch.Tensor([[self.interval[0], self.interval[1]]]).double())
 		self.mu = None
 		self.precomp = False
 		self.procomp_integrals = {}
-	def integral(self,S):
+
+	def get_size(self):
+		return self.m ** self.d
+
+	def integral(self, S):
 		pass
 
-	def basis_fun(self,x,j):
+	def basis_fun(self, x, j):
 		pass
 
 	def get_constraints(self):
-		s = self.m**self.d
-		l = np.full(s, self.b)
-		u = np.full(s, self.B)
-		Lambda = np.identity(s)
-		return (l,Lambda,u)
+		s = self.m ** self.d
+		l = torch.from_numpy(np.full(s, self.b))
+		u = torch.from_numpy(np.full(s, self.B))
+		Lambda = torch.from_numpy(np.identity(s))
+		return (l, Lambda, u)
 
-	def cov(self, inverse = False):
+	def cov(self, inverse=False):
 		if self.precomp == False:
 			dm = (self.interval[1] - self.interval[0]) / (self.m - 1)  # delta m
 			t = self.interval[0] + torch.linspace(0, self.m - 1, self.m) * dm
@@ -58,29 +62,27 @@ class PositiveEmbedding(RandomProcess):
 				t = torch.from_numpy(cartesian([t.numpy(), t.numpy()])).double()
 			elif self.d == 3:
 				t = torch.from_numpy(cartesian([t.numpy(), t.numpy(), t.numpy()])).double()
-
-			self.Gamma = self.kernel(t, t)
-			Z = self.embed_internal(t)
-
-			M = torch.pinverse(Z.T @ Z + (self.s)* torch.eye(self.Gamma.size()[0]))
-			self.M = torch.from_numpy(np.real(scipy.linalg.sqrtm(M.numpy())))
-
-			#self.Gamma_half = torch.cholesky(Gamma \
-			#	+ self.s * self.s * torch.eye(Gamma.size()[0]).double(), upper = True	)
-
-			self.Gamma_half = torch.from_numpy(np.real(scipy.linalg.sqrtm( self.Gamma.numpy() + (self.s**2) *np.eye(self.Gamma.size()[0]))) )
-			self.Gamma_half = self.M @ self.Gamma_half
-			self.invGamma_half = torch.pinverse(self.Gamma_half)
+			if self.kernel is not None:
+				self.Gamma = self.kernel(t, t)
+				Z = self.embed_internal(t)
+				M = torch.pinverse(Z.T @ Z + (self.s) * torch.eye(self.Gamma.size()[0]))
+				self.M = torch.from_numpy(np.real(scipy.linalg.sqrtm(M.numpy())))
+				self.Gamma_half = torch.from_numpy(
+					np.real(scipy.linalg.sqrtm(self.Gamma.numpy() + 1e-5 * (self.s ** 2) * np.eye(self.Gamma.size()[0]))))
+				self.Gamma_half = self.M @ self.Gamma_half
+				self.invGamma_half = torch.pinverse(self.Gamma_half)
+			else:
+				self.Gamma_half = torch.eye(self.m).double()
 			self.precomp = True
 		else:
 			pass
 
 		if inverse == True:
-			return self.Gamma_half,self.invGamma_half
+			return self.Gamma_half, self.invGamma_half
 		else:
 			return self.Gamma_half
 
-	def embed_internal(self,x):
+	def embed_internal(self, x):
 		if self.d == 1:
 			out = torch.zeros(size=(x.size()[0], self.m), dtype=torch.float64)
 			for j in range(self.m):
@@ -104,13 +106,14 @@ class PositiveEmbedding(RandomProcess):
 			n = x.size()[0]
 			out = []
 			for i in range(n):
-				out.append(torch.from_numpy(np.kron(phi_3[i,:],np.kron(phi_1[i, :].numpy(), phi_2[i, :].numpy()))).view(1, -1))
+				out.append(
+					torch.from_numpy(np.kron(phi_3[i, :], np.kron(phi_1[i, :].numpy(), phi_2[i, :].numpy()))).view(1,
+																												   -1))
 			out = torch.cat(out, dim=0)
 			return out
 
-
-	def fit_gp(self, x, y, already_embeded = False):
-		m = self.m**self.d
+	def fit(self, x, y, already_embeded=False):
+		m = self.get_m()
 
 		l, Lambda, u = self.get_constraints()
 		Gamma_half = self.cov()
@@ -121,10 +124,10 @@ class PositiveEmbedding(RandomProcess):
 			Phi = x.numpy()
 
 		xi = cp.Variable(m)
-		obj = cp.Minimize(  self.s**2*cp.norm2(xi) + cp.sum_squares(Phi @ xi - y.numpy().reshape(-1))  )
+		obj = cp.Minimize(self.s ** 2 * cp.norm2(xi) + cp.sum_squares(Phi @ xi - y.numpy().reshape(-1)))
 
 		constraints = []
-		Lambda  = Lambda @ Gamma_half.numpy()
+		Lambda = Lambda @ Gamma_half.numpy()
 		if not np.all(l == -np.inf):
 			constraints.append(Lambda[l != -np.inf] @ xi >= l[l != -np.inf])
 		if not np.all(u == np.inf):
@@ -132,32 +135,36 @@ class PositiveEmbedding(RandomProcess):
 
 		prob = cp.Problem(obj, constraints)
 		prob.solve(solver=cp.MOSEK, warm_start=False,
-				   verbose=False, mosek_params = {mosek.iparam.intpnt_solve_form:mosek.solveform.dual})
+				   verbose=False, mosek_params={mosek.iparam.intpnt_solve_form: mosek.solveform.dual})
 
 		if prob.status != "optimal":
 			raise ValueError('cannot compute the mode')
 
 		mode = xi.value
-		self.mode = torch.from_numpy(mode).view(-1,1)
+		self.mode = torch.from_numpy(mode).view(-1, 1)
 		self.mu = self.mode
 		return mode
-
 
 	def embed(self, x):
 		Gamma_half = self.cov()
 		return self.embed_internal(x) @ Gamma_half
 
-	def mean_std(self, xtest):
+	def mean(self, xtest):
 		embeding = self.embed(xtest)
-		mean = embeding@self.mu
+		mean = embeding @ self.mu
 		return mean
 
+	def mean_std(self, xtest):
+		embeding = self.embed(xtest)
+		mean = embeding @ self.mu
+		return mean, None
+
 	def sample_theta(self):
-		self.mu = torch.randn(size = (self.get_m(),1))
+		self.mu = torch.randn(size=(self.get_m(), 1))
 		return self.mu
 
-	def sample(self, xtest, size = 1):
-		return self.embed(xtest)@self.sample_theta()
+	def sample(self, xtest, size=1):
+		return self.embed(xtest) @ self.sample_theta()
 
 	def get_m(self):
-		return self.m**self.d
+		return self.m ** self.d
