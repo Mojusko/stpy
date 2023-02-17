@@ -2,6 +2,7 @@ import pickle
 from abc import ABC
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
 import pymanopt
 from autograd_minimize import minimize
 from pymanopt.manifolds import Product
@@ -12,6 +13,13 @@ from stpy.helpers import helper
 from stpy.optim.custom_optimizers import bisection
 
 class Estimator(ABC):
+
+	def fit(self):
+		pass
+
+	def load_data(self,d):
+		self.x = d[0]
+		self.y = d[1]
 
 	def log_marginal(self, kernel, X, weight):
 		func = kernel.get_kernel()
@@ -52,9 +60,9 @@ class Estimator(ABC):
 
 		if optimizer == "pymanopt":
 
-			egrad = ehess = None
+			manifold = Product(tuple(manifolds))
 
-			@helper.conditional_decorator(pymanopt.autodiff.backends.PyTorch, optimizer == "pymanopt")
+			@pymanopt.function.pytorch(manifold)
 			def cost(*args):
 				# print (args)
 				input_dict = {}
@@ -72,9 +80,8 @@ class Estimator(ABC):
 					f = self.log_marginal(self.kernel_object, input_dict, weight)
 				return f
 
-			manifold = Product(tuple(manifolds))
-			problem = pymanopt.Problem(manifold, cost=cost, egrad=egrad, ehess=ehess, verbosity=int(verbose) + 1)
-			solver = SteepestDescent(logverbosity=1, maxiter=maxiter, mingradnorm=mingradnorm)
+			problem = pymanopt.Problem(manifold, cost=cost)
+			solver = SteepestDescent(verbosity = verbose , max_iterations=maxiter, min_gradient_norm=mingradnorm)
 
 			# get initial point
 			objective_values = []
@@ -84,15 +91,15 @@ class Estimator(ABC):
 				x_init = []
 				for index, man in enumerate(manifolds):
 					if init_values[index] is None:
-						x_sub = man.rand() * scale
+						x_sub = man.random_point() * scale
 					else:
 						x_sub = np.array([init_values[index]])
 					x_init.append(x_sub)
 				# try:
-				x_opt, log = solver.solve(problem, x=x_init)
+				res = solver.run(problem, initial_point=x_init)
 
-				objective_params.append(x_opt)
-				objective_values.append(log['final_values']['f(x)'])
+				objective_params.append(res.point)
+				objective_values.append(res.cost)#log['final_values']['f(x)'])
 			# except Exception as e:
 			#	print (e)
 			#	print ("Optimization restart failed:", x_init)
@@ -236,7 +243,7 @@ class Estimator(ABC):
 		self.back_prop = False
 
 		# refit the model
-		self.fit = False
+		self.fitted = False
 		print(self.description())
 		self.fit_gp(self.x, self.y)
 		return True
@@ -322,13 +329,24 @@ class Estimator(ABC):
 			return fig, ax
 	# plt.show()
 
-	def visualize(self, xtest, f_true=None, points=True, show=True, size=2,
-				  norm=1, fig=True, sqrtbeta=2, constrained=None, d=None, matheron_kernel=None, color = None):
+	def visualize(self, xtest,bounds = False, f_true=None, points=True, show=True, size=2,
+				  norm=1, fig=True, sqrtbeta=2, constrained=None, d=None,
+				  matheron_kernel=None, color = None, label = "", visualize_point = None):
 
-		[mu, std] = self.mean_std(xtest)
+		if not bounds:
+			[mu, std] = self.mean_std(xtest)
+			lcb = mu - sqrtbeta *std
+			ucb = mu + sqrtbeta *std
+		else:
+			print ("using bounds")
+			lcb = self.lcb(xtest)
+			ucb = self.ucb(xtest)
+			mu = self.mean(xtest)
 
 		if d is None:
 			d = self.d
+
+
 
 		if d == 1:
 			if fig == True:
@@ -336,6 +354,11 @@ class Estimator(ABC):
 				plt.clf()
 			if self.x is not None:
 				plt.plot(self.x.detach().numpy(), self.y.detach().numpy(), 'ro', ms=10)
+
+			if visualize_point is not None:
+				[x, y] = visualize_point
+				plt.plot(x, y, 'go', ms = 10)
+
 			if size > 0:
 
 				if matheron_kernel is not None:
@@ -346,15 +369,17 @@ class Estimator(ABC):
 				for z_arr, label in zip(z, ['sample'] + [None for _ in range(size - 1)]):
 					plt.plot(xtest.view(-1).numpy(), z_arr, 'k--', lw=2, label=label)
 
-			plt.fill_between(xtest.numpy().flat, (mu - sqrtbeta * std).numpy().flat, (mu + sqrtbeta * std).numpy().flat,
+			plt.fill_between(xtest.view(-1).numpy(), lcb.view(-1).numpy(), ucb.view(-1).numpy(),
 							 color="#dddddd")
+
 			if f_true is not None:
 				plt.plot(xtest.numpy(), f_true(xtest).numpy(), 'b-', lw=2, label="truth")
+
 			if color is None:
 				plt.plot(xtest.numpy(), mu.numpy(), 'r-', lw=2, label="posterior mean")
 			else:
-				plt.plot(xtest.numpy(), mu.numpy(), linestyle = '-', lw=2, label="posterior mean", color = color)
-			# plt.title('Posterior mean prediction plus 2 st.deviation')
+				plt.plot(xtest.numpy(), mu.numpy(), linestyle = '-', lw=2, label="posterior mean"+label, color = color)
+
 			plt.legend()
 			if show == True:
 				plt.show()
@@ -371,21 +396,22 @@ class Estimator(ABC):
 			if f_true is not None:
 				grid_z = griddata((xx, yy), f_true(xtest)[:, 0].numpy(), (grid_x, grid_y), method='linear')
 				ax.plot_surface(grid_x, grid_y, grid_z, color='b', alpha=0.4, label="truth")
-			if points == True and self.fit == True:
+			if points == True and self.fitted == True:
 				ax.scatter(self.x[:, 0].detach().numpy(), self.x[:, 1].detach().numpy(), self.y[:, 0].detach().numpy(),
 						   c='r', s=100, marker="o", depthshade=False)
-			if self.beta is not None:
-				beta = self.beta(norm=norm)
-				grid_z2 = griddata((xx, yy), (mu.detach() + beta * std.detach())[:, 0].detach().numpy(),
-								   (grid_x, grid_y), method='linear')
-				ax.plot_surface(grid_x, grid_y, grid_z2, color='gray', alpha=0.2)
-				grid_z3 = griddata((xx, yy), (mu.detach() - beta * std.detach())[:, 0].detach().numpy(),
-								   (grid_x, grid_y), method='linear')
-				ax.plot_surface(grid_x, grid_y, grid_z3, color='gray', alpha=0.2)
+			if hasattr(self,"beta"):
+				if self.beta is not None:
+					beta = self.beta(norm=norm)
+					grid_z2 = griddata((xx, yy), (mu.detach() + beta * std.detach())[:, 0].detach().numpy(),
+									   (grid_x, grid_y), method='linear')
+					ax.plot_surface(grid_x, grid_y, grid_z2, color='gray', alpha=0.2)
+					grid_z3 = griddata((xx, yy), (mu.detach() - beta * std.detach())[:, 0].detach().numpy(),
+									   (grid_x, grid_y), method='linear')
+					ax.plot_surface(grid_x, grid_y, grid_z3, color='gray', alpha=0.2)
 
-			ax.plot_surface(grid_x, grid_y, grid_z_mu, color='r', alpha=0.4)
-			# plt.title('Posterior mean prediction plus 2 st.deviation')
-			plt.show()
+				ax.plot_surface(grid_x, grid_y, grid_z_mu, color='r', alpha=0.4)
+				# plt.title('Posterior mean prediction plus 2 st.deviation')
+				plt.show()
 
 		else:
 			print("Visualization not implemented")

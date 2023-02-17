@@ -9,12 +9,14 @@ from stpy.kernels import KernelFunction
 
 class MultipleKernelLearner(GaussianProcess):
 
-	def __init__(self, kernel_objects, lam=1.0, s=0.01, opt = 'sdp'):
+	def __init__(self, kernel_objects, lam=1.0, s=0.01, opt = 'closed'):
 		self.kernel_objects = kernel_objects
 		self.no_models = len(kernels)
+
 		self.s = s
 		self.lam = lam
 		self.opt = opt
+
 		self.var = 'fixed'
 
 	def fit_gp(self, x, y):
@@ -32,9 +34,10 @@ class MultipleKernelLearner(GaussianProcess):
 			A = None
 			for i in range(self.no_models):
 				if A is None:
-					A = self.Ks[i] * alpha[i] + np.eye(self.n) * self.lam * self.s ** 2
+					A = self.Ks[i] * alpha[i]
 				else:
-					A += self.Ks[i]*alpha[i] + np.eye(self.n)*self.lam*self.s**2
+					A += self.Ks[i] * alpha[i]
+			A = A + np.eye(self.n)*self.lam*self.s**2
 			constraints = []
 			l = cp.reshape(u, (1, 1))
 			G = cp.bmat([[A, y.numpy()], [y.numpy().T, l]])
@@ -46,10 +49,17 @@ class MultipleKernelLearner(GaussianProcess):
 			prob = cp.Problem(objective, constraints)
 			prob.solve( solver = cp.MOSEK,verbose = True)
 
+		elif self.opt == "closed":
+			alpha = cp.Variable(self.no_models)
+			A = sum([self.Ks[i] * alpha[i] for i in range(self.no_models)])+ np.eye(self.n) * self.lam * self.s ** 2
+			constraints = [np.sum(alpha)==1, alpha >= 0, alpha<=1]
+			objective = cp.matrix_frac(self.y.numpy(), A)
+			prob = cp.Problem(cp.Minimize(objective), constraints)
+			prob.solve(solver=cp.MOSEK, verbose=True)
+
 		self.alphas = torch.from_numpy(alpha.value)
 		self.K = torch.sum(torch.stack([alpha*K for alpha,K in zip(self.alphas, self.Ks)]), dim = 0) + np.eye(self.n)*self.lam*self.s**2
 		self.fit = True
-		print (self.alphas)
 
 	def execute(self, xtest):
 		if self.fit == True:
@@ -61,8 +71,14 @@ class MultipleKernelLearner(GaussianProcess):
 		K_star_star = torch.sum(torch.stack([alpha * K for alpha, K in zip(self.alphas, Ks)]), dim=0)
 		return (K_star, K_star_star)
 
-	def log_marginal(self, kernel, X, weight):
-		pass
+	# def log_marginal(self, kernel, X, weight):
+	# 	pass
+
+	def mean(self, xtest):
+		K_star, K_star_star = self.execute(xtest)
+		self.A = torch.linalg.lstsq(self.K, self.y)[0]
+		ymean = torch.mm(K_star, self.A)
+		return ymean
 
 	def mean_std(self, xtest, full=False, reuse=False):
 		K_star, K_star_star = self.execute(xtest)
@@ -82,9 +98,6 @@ class MultipleKernelLearner(GaussianProcess):
 			theta = cp.Variable(self.n*self.no_models)
 			M = torch.block_diag(self.Ks)
 			cp.norm(theta,p=2)*theta[i]
-
-
-
 
 	def std_fixed(self, xtest):
 		K_star, K_star_star = self.execute(xtest)
@@ -111,6 +124,7 @@ if __name__ == "__main__":
 
 	xtest = interval_torch(n,d)
 	x = interval_torch(N,d)
+
 	kernel1 = KernelFunction(gamma = 0.1)
 	kernel2 = KernelFunction(kernel_name="polynomial")
 	kernels = [kernel1, kernel2]
