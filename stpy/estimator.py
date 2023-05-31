@@ -8,13 +8,23 @@ from autograd_minimize import minimize
 from pymanopt.manifolds import Product
 from pymanopt.optimizers import SteepestDescent
 from torchmin import minimize as minimize_torch
-
+from abc import ABC, abstractmethod
 from stpy.helpers import helper
 from stpy.optim.custom_optimizers import bisection
 
 class Estimator(ABC):
+class Estimator(ABC):
 
 	def fit(self):
+		pass
+
+
+	@abstractmethod
+	def ucb(self, x):
+		pass
+
+	@abstractmethod
+	def lcb(self, x):
 		pass
 
 	def load_data(self,d):
@@ -301,7 +311,11 @@ class Estimator(ABC):
 				plt.yticks(fontsize=20, rotation=0)
 				plt.savefig(filename, dpi=300)
 
-	def visualize_function_contour(self, xtest, f_true, filename=None, levels=10, figsize=(15, 7), alpha = 1., colorbar = True):
+	def visualize_function_contour(self, xtest, f_true,
+								   filename=None, levels=10, figsize=(15, 7),
+								   alpha = 1., colorbar = True, cmap = 'hot',
+								   mean_point = None, point_color = 'tab:red', ax = None,
+								   fig = None):
 		d = xtest.size()[1]
 		if d == 1:
 			pass
@@ -312,15 +326,18 @@ class Estimator(ABC):
 			grid_x, grid_y = np.mgrid[min(xx):max(xx):100j, min(yy):max(yy):100j]
 			f = f_true(xtest)
 			grid_z_f = griddata((xx, yy), f[:, 0].detach().numpy(), (grid_x, grid_y), method='linear')
+			if ax is None:
+				fig, ax = plt.subplots(figsize=figsize)
 
-			fig, ax = plt.subplots(figsize=figsize)
-			cs = ax.contourf(grid_x, grid_y, grid_z_f, levels=levels, alpha = alpha, cmap = 'hot')
-			ax.contour(cs, colors='k', alpha = 1.)
+			cs = ax.contourf(grid_x, grid_y, grid_z_f, alpha = 0.5, cmap = cmap, linewidths=1, levels = [0,1])
+			ax.contour(cs, colors='k', levels = [0.5], alpha = 0.5)
 			if colorbar:
 				cbar = fig.colorbar(cs)
 			# if self.x is not None:
 			#	ax.scatter(self.x[:, 0].detach().numpy(), self.x[:, 1].detach().numpy(), c='r', s=100, marker="o")
 			ax.grid(c='k', ls='-', alpha=0.1)
+			if mean_point is not None:
+				plt.plot(mean_point[0],mean_point[1], 'o', ms = 10, color = point_color)
 
 			if filename is not None:
 				plt.xticks(fontsize=24, rotation=0)
@@ -393,12 +410,16 @@ class Estimator(ABC):
 			yy = xtest[:, 1].numpy()
 			grid_x, grid_y = np.mgrid[min(xx):max(xx):100j, min(yy):max(yy):100j]
 			grid_z_mu = griddata((xx, yy), mu[:, 0].detach().numpy(), (grid_x, grid_y), method='linear')
+			ax.plot_surface(grid_x, grid_y, grid_z_mu, color='r', alpha=0.4, label="mu")
+
 			if f_true is not None:
 				grid_z = griddata((xx, yy), f_true(xtest)[:, 0].numpy(), (grid_x, grid_y), method='linear')
 				ax.plot_surface(grid_x, grid_y, grid_z, color='b', alpha=0.4, label="truth")
+
 			if points == True and self.fitted == True:
 				ax.scatter(self.x[:, 0].detach().numpy(), self.x[:, 1].detach().numpy(), self.y[:, 0].detach().numpy(),
 						   c='r', s=100, marker="o", depthshade=False)
+
 			if hasattr(self,"beta"):
 				if self.beta is not None:
 					beta = self.beta(norm=norm)
@@ -411,7 +432,7 @@ class Estimator(ABC):
 
 				ax.plot_surface(grid_x, grid_y, grid_z_mu, color='r', alpha=0.4)
 				# plt.title('Posterior mean prediction plus 2 st.deviation')
-				plt.show()
+			plt.show()
 
 		else:
 			print("Visualization not implemented")

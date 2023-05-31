@@ -12,12 +12,25 @@ class WeilbullLikelihoodCanonical(Likelihood):
         super().__init__()
         self.p = p
 
+    def information_matrix(self, theta_fit):
+        pass
 
-    def evaluate_point(self, theta, d):
+
+    def normalization(self, d):
+        pass
+
+
+    def evaluate_datapoint(self, theta, d, mask = None):
+        if mask is None:
+            mask = 1.
         x, y = d
         lam = torch.exp(x @ theta)
         l = -torch.log(lam) + (y ** (self.p)) * lam
+        l = l * mask
         return l
+
+    def scale(self, err = None, bound = None):
+        return np.exp(bound)
 
     def add_data_point(self, d):
         x, y = d
@@ -32,10 +45,10 @@ class WeilbullLikelihoodCanonical(Likelihood):
     def evaluate_log(self, f):
         pass
 
-    def get_torch_objective(self):
+    def get_objective_torch(self):
         pass
 
-    def get_cvxpy_objective(self, mask=None):
+    def get_objective_cvxpy(self, mask=None):
         if mask is None:
             def likelihood(theta):
                 return -cp.sum(self.x@theta) + cp.sum(cp.diag(self.y**(self.p))@cp.exp(self.x @ theta))
@@ -47,7 +60,7 @@ class WeilbullLikelihoodCanonical(Likelihood):
                     return cp.sum(theta * 0)
         return likelihood
 
-    def get_cvxpy_confidence_set(self,
+    def get_confidence_set_cvxpy(self,
                                  theta: cp.Variable,
                                  type: Union[str, None] = None,
                                  params: Dict = {},
@@ -68,7 +81,7 @@ class WeilbullLikelihoodCanonical(Likelihood):
             set = self.set_fn(theta)
 
         elif type == "LR":
-            set = self.lr_confidence_set(theta, beta, params)
+            set = self.lr_confidence_set_cvxpy(theta, beta, params)
 
         else:
             raise NotImplementedError("The desired confidence set type is not supported.")

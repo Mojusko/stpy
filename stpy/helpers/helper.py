@@ -59,17 +59,23 @@ def cartesian(arrays, out=None, dtype = None):
 	return out
 
 
-def estimate_std(x,y,truncation:Union[float,None] = None, verbose = False, conservative = False):
+def estimate_std(x: torch.Tensor, # x values used for uniqueness detection
+				 y: torch.Tensor, # y values
+				 truncation:Union[float,None] = None, # truncate at specific y
+				 verbose:bool = False, # verbosity level
+				 conservative:bool = False,
+				 return_all_residuals:bool = False # return
+				 ): #
 
 	out, indices, counts = torch.unique(x, dim=0, return_inverse=True, return_counts=True)
-	residuals_mean = []
+	residuals_mean_list = []
 
 	for i in range(counts.size()[0]):
 		if counts[i] > 1:
 			mask = indices == i
 			mean = torch.mean(y[mask].view(-1))
-			residuals_mean.append(y[mask].view(-1)-mean.view(-1))
-	residuals_mean = torch.hstack(residuals_mean)
+			residuals_mean_list.append(y[mask].view(-1)-mean.view(-1))
+	residuals_mean = torch.hstack(residuals_mean_list)
 
 	if verbose:
 		print ("Estimating variance from:",residuals_mean.size())
@@ -80,7 +86,10 @@ def estimate_std(x,y,truncation:Union[float,None] = None, verbose = False, conse
 	else:
 		sigma_std = torch.std(residuals_mean)
 
-	return sigma_std
+	if return_all_residuals:
+		return residuals_mean_list, out, counts, residuals_mean, indices
+	else:
+		return sigma_std
 
 
 
@@ -503,6 +512,13 @@ def median_of_means(list, delta=0.01):
 
 
 def get_indices(xtest,x):
+	"""
+	Find location of vectors in a larger set
+	:param xtest: torch.Tensor, tensor to be located
+	:param x: torch.Tensor, to be located in xtest
+	:return: list, if None its means it was not found in the original tensor
+	"""
+
 	indices = []
 	for i in range(x.size()[0]):
 		xtrial = x[i,:]

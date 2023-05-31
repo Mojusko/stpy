@@ -23,15 +23,6 @@ class NoiseModel(ABC):
 	def sample_noise(self, xs):
 		pass
 
-	@abstractmethod
-	def log_likelihood(self, ys, xs, theta: Union[np.array, cp.Variable]) -> Union[np.array, cp.Expression]:
-		""" evaluates the log likelihood of the noise realizations
-			xs is optional in case model is heteroscedastic
-			returns an array of size etas.shape[0]
-			IMPORTANT: should differentiate on whether theta is a np.array or a cp.Variable
-		"""
-		pass
-
 	def joint_log_likelihood(self, ys, xs, theta: Union[np.array, cp.Variable]) -> Union[np.array, cp.Expression]:
 		""" Returns the sum of the lls, i.e. the joint ll"""
 		if isinstance(theta, cp.Variable):
@@ -69,14 +60,6 @@ class AdditiveHomoscedasticNoiseModel(NoiseModel):
 		""" pass xs in order to know how large noise should be. Also able to deal with heteroscedastic later on """
 		pass
 
-	@abstractmethod
-	def noise_log_likelihood(self, etas):
-		pass
-
-	@abstractmethod
-	def cvxpy_noise_log_likelihood(self, etas):
-		pass
-
 	def sample(self, xs, theta):
 		return xs @ theta + self.sample_noise(xs)
 
@@ -89,7 +72,23 @@ class AdditiveHomoscedasticNoiseModel(NoiseModel):
 			return self.noise_log_likelihood(ys - (xs @ theta))
 
 
-class AdditiveGaussianNoise(AdditiveHomoscedasticNoiseModel):
+
+class PoissonNoise(NoiseModel):
+
+	def __init__(self, lam):
+		self.lam = lam
+
+	def sample_noise(self, xs):
+		return torch.poisson(self.lam(xs).view(-1)).view(-1,1)
+	def convex(self) -> bool:
+		pass
+
+	def sample(self, xs, theta):
+		pass
+
+	def mean(self, xs):
+		return self.lam(xs)
+class GaussianNoise(AdditiveHomoscedasticNoiseModel):
 	def __init__(self, sigma=0.1):
 		"""
 		:param sigma: standard deviation
@@ -114,7 +113,26 @@ class AdditiveGaussianNoise(AdditiveHomoscedasticNoiseModel):
 		return "GaussianAdditive"
 
 
-class AdditiveBoundedNoise(AdditiveGaussianNoise):
+
+class HuberNoise(AdditiveHomoscedasticNoiseModel):
+	def __init__(self, sigma=0.1):
+		"""
+		:param sigma: standard deviation
+		"""
+		super().__init__()
+		self.sigma = sigma
+
+	def sample_noise(self, xs):
+		return self.sigma*(np.random.normal(scale=1.0, size=(xs.shape[0], 1)) +  np.random.laplace(scale=self.sigma, size=(xs.shape[0], 1)))/2.
+
+	@property
+	def convex(self) -> bool:
+		return True
+
+	def __str__(self):
+		return "GaussianAdditive"
+
+class AdditiveBoundedNoise(GaussianNoise):
 	""" Sub-Gaussian bounded norm, with a Gaussian Likelihood"""
 	def __init__(self, lower, upper):
 		super().__init__(upper-lower)
@@ -131,7 +149,7 @@ class AdditiveBoundedNoise(AdditiveGaussianNoise):
 		return "BoundedNoiseAdditive"
 
 
-class MisspecifiedAdditiveGaussianNoise(AdditiveGaussianNoise):
+class MisspecifiedAdditiveGaussianNoise(GaussianNoise):
 	def __init__(self, sigma=1.0, actual_sigma=0.1):
 		"""
 		:param sigma: standard deviation
@@ -146,22 +164,22 @@ class MisspecifiedAdditiveGaussianNoise(AdditiveGaussianNoise):
 		return "MisspecifiedGaussianAdditive"
 
 
-class AdditiveLaplaceNoise(AdditiveHomoscedasticNoiseModel):
-	def __init__(self, sigma):
+class LaplaceNoise(GaussianNoise):
+	def __init__(self, b):
 		"""
 		:param sigma: this is sometimes also denoted as b
 		"""
 		super().__init__()
-		self.sigma = sigma
+		self.b = b
 
 	def noise_log_likelihood(self, etas):
-		return -np.log(2*self.sigma) - np.abs(etas)/self.sigma
+		return -np.log(2*self.b) - np.abs(etas)/self.b
 
 	def cvxpy_noise_log_likelihood(self, etas):
-		return -np.log(2*self.sigma) - cp.abs(etas)/self.sigma
+		return -np.log(2*self.b) - cp.abs(etas)/self.b
 
 	def sample_noise(self, xs):
-		return np.random.laplace(scale=self.sigma, size=(xs.shape[0], 1))
+		return np.random.laplace(loc = 0, scale=self.b, size=(xs.shape[0], 1))
 
 	def __str__(self):
 		return "Laplace"
@@ -248,6 +266,8 @@ class BernoulliNoise(NoiseModel):
 
 	def log_likelihood(self, ys, xs, theta: Union[np.array, cp.Variable]) -> Union[np.array, cp.Expression]:
 		pass
+
+
 class LogWeibullNoise(NoiseModel):
 	def __init__(self, lam, p = 2, lam_form = lambda x, y: np.exp(x@y)):
 		"""

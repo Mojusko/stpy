@@ -14,19 +14,19 @@ class KernelizedFeatures(GaussianProcess):
 		Random Fourier Features for Gaussian Kernel
 	'''
 
-	def __init__(self, embedding, m, s=0.001, lam=1., d=1, diameter=1.0, verbose=True, groups=None,
-				 bounds=None, scale=1.0, kappa=1.0, poly=2, primal=True):
+	def __init__(self, embedding, m, s=0.001, lam=1., d=1, diameter=1.0, theta_norm=1.0, verbose=True, groups=None,
+				 bounds=None, scale=1.0, kappa=1.0, poly=2, primal=True, beta_fun=None, bound= 1) :
 
 		self.s = s
 		self.lam = lam
 		self.primal = primal
 		self.x = None
 
-		self.K = 0
+		self.K = torch.ones(size=(1, 1)).double()
 		self.mu = 0.0
 
 		self.m = torch.from_numpy(np.array(m))
-		self.fit = False
+		self.fitted = False
 		self.data = False
 
 		self.d = d
@@ -34,6 +34,7 @@ class KernelizedFeatures(GaussianProcess):
 		self.bounds = bounds
 		self.groups = groups
 		self.diameter = diameter
+		self.theta_norm = theta_norm
 
 		self.verbose = verbose
 		self.admits_first_order = True
@@ -49,31 +50,33 @@ class KernelizedFeatures(GaussianProcess):
 		self.prior_mean = 0
 		self.linear_kernel = KernelFunction(kernel_name="linear").linear_kernel
 		self.dual = False
+		self.beta_fun = beta_fun
+		self.bound = bound
 
-	def beta(self, delta=1e-2, norm=1, theory=False, variance_only=False):
-		if not theory:
-			beta_value = 2.
+	def beta(self, delta=0.1, norm=None):
+		# self.K = Z_ + self.s * self.s * self.lam * I
+		if norm is None:
+			norm = self.theta_norm
+
+		if self.beta_fun is None:
+			return 2.0
+
+		elif self.beta_fun == "theory":
+			K = self.kernel(self.x,self.x) + torch.eye(self.x.size()[0]).double()*self.s**2*self.lam
+
+			beta_value = self.bound * self.lam + torch.logdet(K / ((self.s ** 2) * self.lam)) + 2 * np.log(1 / delta)
+			Q = self.embed(self.x)
+			Lam = self.lam * torch.eye(self.get_basis_size()).double()
+			V = Q.T @ Q/(self.s**2) + Lam
+
+			beta_value = self.bound * self.lam + torch.logdet(V) - torch.logdet(Lam) + 2 * np.log(1 / delta)
+			beta_value = beta_value
 		else:
-			embeding = self.embed(self.x)
-			n = self.x.size()[0]
-			Z_ = self.linear_kernel(embeding, embeding)
-			K = (Z_ + self.lam * torch.eye(int(self.n), dtype=torch.float64))
-			if not variance_only:
-				beta_value = norm * np.sqrt(self.lam) + self.s * np.sqrt(
-					torch.logdet(K) - n * np.log(self.lam) + 2. * np.log(1. / delta))
-			else:
-				beta_value = self.s * np.sqrt(torch.logdet(K) - n * np.log(self.lam) + 2. * np.log(1. / delta))
+			return self.beta_fun(self.K, delta=delta, norm=norm)
 		return beta_value
 
 	def description(self):
 		return "Custom Features object"
-
-	def norm(self):
-		if self.fit:
-			norm = torch.linalg.norm(self.theta_mean())
-			return norm
-		else:
-			return None
 
 	def embed(self, x):
 		return self.embedding.embed(x)
@@ -107,68 +110,10 @@ class KernelizedFeatures(GaussianProcess):
 			self.fit_gp(x, y)
 		else:
 			self.to_add.append([x, y])
-			self.fit = False
+			self.fitted = False
 
-	def fit_gp_soft(self, x, y, A, b, std=None):
-		self.fit_gp(x, y)
-		Q = self.embed(self.x)
-		theta = cp.Variable(int(torch.sum(self.m).detach().view(-1).numpy()))
-		if std is not None:
-			P = np.diag(1 / (std ** 2))
-		else:
-			P = np.diag(np.ones(A.shape[0]))
-
-		objective = cp.Minimize(
-			cp.sum(cp.square(Q.detach().numpy() @ theta - self.y.view(-1).detach().numpy()))
-			+ self.s ** 2 * cp.quad_form(A @ theta - b, P) + self.lam * self.s ** 2 * cp.sum_squares(theta))
-		prob = cp.Problem(objective)
-		prob.solve(solver=cp.MOSEK, verbose=False)
-		return torch.from_numpy(theta.value).view(-1, 1)
-
-	def fit_gp_equality_fast(self, x, y, A, b, rcond=1e-2):
-		self.fit_gp(x, y)
-		Q = self.embed(self.x)
-		I = torch.zeros(Q.size()[1]).double()
-
-		V = Q.T @ Q - self.lam * self.s ** 2 * I
-		e = Q.T @ self.y
-
-		R = torch.from_numpy(orth(A.detach().numpy().T)).T
-		b = torch.zeros(size=(R.size()[0], 1)).double()
-		M = torch.vstack([V, R])
-		v = torch.vstack([e, b.view(-1, 1)])
-		theta = torch.linalg.lstsq(M, v.view(-1))[0].view(-1, 1)
-		return theta
-
-	def fit_gp_equality(self, x, y, A, b, eps=1e-6, rcond=1e-6):
-		self.fit_gp(x, y)
-		Q = self.embed(self.x)
-
-		if eps is not None:
-			theta = cp.Variable(int(torch.sum(self.m).detach().view(-1).numpy()))
-			objective = cp.Minimize(
-				cp.sum_squares(Q.detach().numpy() @ theta - self.y.view(
-					-1).detach().numpy()) + self.lam * self.s ** 2 * cp.sum_squares(theta))
-
-			constraints = [A.detach().numpy() @ theta - b.detach().view(-1).numpy() <= np.ones(A.size()[0]) * eps ** 2]
-			constraints += [
-				A.detach().numpy() @ theta - b.detach().view(-1).numpy() >= -np.ones(A.size()[0]) * eps ** 2]
-
-			prob = cp.Problem(objective, constraints)
-			prob.solve(solver=cp.MOSEK, verbose=True)
-			return torch.from_numpy(theta.value).view(-1, 1)
-		else:
-			r = torch.linalg.lstsq(A, b)[0]
-			N = null_space(A.detach().numpy(), rcond=rcond)
-			theta = cp.Variable(N.shape[1])
-
-			objective = cp.Minimize(
-				cp.sum_squares(Q.detach().numpy() @ N @ theta - self.y.view(
-					-1).detach().numpy()) + self.lam * self.s ** 2 * cp.sum_squares(theta))
-
-			prob = cp.Problem(objective)
-			prob.solve(solver=cp.MOSEK, verbose=True)
-			return torch.from_numpy(N @ theta.value + r.numpy()).view(-1, 1)
+	def fit(self,x=None,y=None):
+		self.fit_gp(self.x,self.y)
 
 	def fit_gp(self, x, y):
 		'''
@@ -188,10 +133,12 @@ class KernelizedFeatures(GaussianProcess):
 			self.dual = False
 
 		self.data = True
-		self.fit = False
+		self.fitted = False
+		self.precompute()
 		return None
 
-	def add_points(self, x, y):
+	def add_points(self, d):
+		x,y = d
 		if self.x is not None:
 			self.x = torch.cat((self.x, x), dim=0)
 			self.y = torch.cat((self.y, y), dim=0)
@@ -221,13 +168,14 @@ class KernelizedFeatures(GaussianProcess):
 			I = torch.eye(self.m).double()
 			Z_ = self.linear_kernel(torch.t(self.Q), torch.t(self.Q))
 			self.V = (Z_ + self.s * self.s * self.lam * torch.eye(self.m, dtype=torch.float64))
-			self.invV, _ = torch.solve(I, self.V)
+			self.invV  = torch.linalg.solve(self.V,I)
 			return self.invV
 		else:
 			return self.invV
 
 	def precompute(self):
-		if self.fit == False:
+
+		if self.fitted == False:
 			if len(self.to_add) > 0:
 				# something to add via low rank update
 				for i in range(len(self.to_add)):
@@ -239,6 +187,8 @@ class KernelizedFeatures(GaussianProcess):
 
 					if self.dual:  # via Shur complements
 						newKinv = torch.zeros(size=(self.n + 1, self.n + 1)).double()
+						newK = torch.zeros(size=(self.n + 1, self.n + 1)).double()
+
 						M = self.invK @ self.Q
 						c = 1. / ((self.s ** 2 * self.lam + emb @ emb.T) - emb @ self.Q.T @ M @ emb.T)
 
@@ -247,12 +197,17 @@ class KernelizedFeatures(GaussianProcess):
 						newKinv[self.n, 0:self.n] = (- emb @ M.T * c).view(-1)
 						newKinv[self.n, self.n] = c.view(-1)
 
+						newK[0:self.n, 0:self.n] = self.K
+						newK[0:self.n, self.n] = emb @ self.Q.T
+						newK[self.n, 0:self.n] = emb @ self.Q.T
+						newK[self.n, self.n] = self.s ** 2 * self.lam + emb @ emb.T
+						self.K = newK
+
 						self.invK = newKinv
 
 						self.add_points(newx, newy)
 						self.n = self.n + 1
 						self.Q = self.embed(self.x)
-
 						self.invK_V = (1. / self.lam) * (-self.Q.T @ self.invK @ self.Q + torch.eye(int(self.m)))
 
 					else:  # via Woodbury
@@ -265,36 +220,35 @@ class KernelizedFeatures(GaussianProcess):
 
 					self.check_conversion()
 
-				self.fit = True
+				self.fitted = True
 				self.to_add = []
 
 
 			elif self.data == True:  # just compute the
 				self.Q = self.embed(self.x)
-				if not self.dual:
-					I = torch.eye(int(self.m)).double()
-					Z_ = self.Q.T @ self.Q
-					self.V = Z_ + self.s ** 2 * self.lam * I
-					self.invV = torch.pinverse(self.V, rcond=1e-10)
-				else:
+				if self.dual:
 					I = torch.eye(self.n).double()
 					Z_ = self.Q @ self.Q.T
 					self.K = Z_ + self.s * self.s * self.lam * I
 					# self.invK, _ = torch.solve(I, self.K)
 					self.invK = torch.pinverse(self.K)
 					self.invK_V = (1. / self.lam) * (-self.Q.T @ self.invK @ self.Q + torch.eye(int(self.m)))
-				self.fit = True
+				else:
+					I = torch.eye(int(self.m)).double()
+					Z_ = self.Q.T @ self.Q
+					self.V = Z_ + self.s ** 2 * self.lam * I
+					self.invV = torch.pinverse(self.V)
+
+				self.fitted = True
 			else:
-				I = torch.eye(int(self.m)).double()
-				self.V = self.s ** 2 * self.lam * I
-				self.invV = torch.pinverse(self.V, rcond=1e-10)
+				pass
 		else:
 			pass
 
 	def theta_mean(self, var=False, prior=False):
-
 		self.precompute()
-		if self.fit == True and prior == False:
+
+		if self.fitted == True and prior == False:
 			if self.dual:
 				theta_mean = self.Q.T @ self.invK @ self.y
 				Z = self.invK_V
@@ -309,25 +263,39 @@ class KernelizedFeatures(GaussianProcess):
 		else:
 			return (theta_mean, Z)
 
+	def mean(self, xtest):
+		return self.mean_std(xtest)[0]
+
 	def mean_std(self, xtest):
 		'''
 			Calculate mean and variance for GP at xtest points
 		'''
-		# self.precompute()
+		self.precompute()
 		embeding = self.embed(xtest)
 
 		# mean
 		theta_mean = self.theta_mean()
+		# print(torch.norm(theta_mean))
 		ymean = embeding @ theta_mean
 
 		# std
-		if not self.dual:
+		if not self.dual or self.primal:
 			diagonal = self.s ** 2 * torch.einsum('ij,jk,ik->i', (embeding, self.invV, embeding)).view(-1, 1)
 		else:
 			diagonal = torch.einsum('ij,jk,ik->i', (embeding, self.invK_V, embeding)).view(-1, 1)
 
 		ystd = torch.sqrt(diagonal)
 		return (ymean, ystd)
+
+	def ucb(self, xtest, delta=0.1):
+		mu, std = self.mean_std(xtest)
+		res = mu + np.sqrt(self.beta(delta=delta)) * std
+		return res
+
+	def lcb(self, xtest, delta=0.1):
+		mu, std = self.mean_std(xtest)
+		res = mu - np.sqrt(self.beta(delta=delta)) * std
+		return res
 
 	def sample_matheron(self, xtest, kernel_object, size=1):
 		basis = self.get_basis_size()
@@ -353,18 +321,15 @@ class KernelizedFeatures(GaussianProcess):
 		basis = self.get_basis_size()
 
 		zeros = torch.zeros(size=(basis, size), dtype=torch.float64)
-		random_vector = torch.normal(mean=zeros, std=1.).double()
+		random_vector = torch.normal(mean=zeros, std=1.)
 		self.precompute()
 
-		if self.fit == True and prior == False:
+		if self.fitted == True and prior == False:
 			self.L = torch.linalg.cholesky(self.get_invV()) * self.s
-			theta = self.theta_mean().view(-1, 1)
-			print(theta.size())
-			print(self.L.size())
-			print(random_vector.size())
+			theta = self.theta_mean()
 			theta = theta + torch.mm(self.L, random_vector)
 		else:
-			Z = (self.lam) * torch.eye(basis, dtype=torch.float64)
+			Z = self.lam * torch.eye(basis, dtype=torch.float64)
 			L = torch.linalg.cholesky(Z.transpose(-2, -1).conj()).transpose(-2, -1).conj()
 			theta = torch.mm(L, random_vector) + self.prior_mean
 
@@ -476,7 +441,6 @@ class KernelizedFeatures(GaussianProcess):
 	def mean_gradient_hessian(self, xtest, hessian=False):
 		hessian_mu = torch.zeros(size=(self.d, self.d), dtype=torch.float64)
 		xtest.requires_grad_(True)
-
 		# xtest.retain_grad()
 		mu = self.mean_std(xtest)[0]
 		# mu.backward(retain_graph=True)
@@ -494,41 +458,6 @@ class KernelizedFeatures(GaussianProcess):
 	""" 
 	Optimization
 	"""
-
-	def ucb(self, xtest, beta = lambda :2., bound = None, lcb = False):
-
-		if bound is not None:
-			mu, V = self.theta_mean(var = True)
-			mu = mu.T
-			Phi = self.embed(xtest)
-			ucb = torch.zeros(size = (xtest.size()[0],1)).double()
-
-			theta = cp.Variable(self.get_basis_size())
-			for i in range(xtest.size()[0]):
-				phi = Phi[i,:]
-				if lcb:
-					objective = cp.Minimize(phi @ theta)
-				else:
-					objective = cp.Maximize(phi @ theta)
-
-				constraints = []
-				constraints += [cp.quad_form(mu.view(-1)-theta,V) <= beta()]
-				constraints += [cp.sum_squares(theta) <= bound]
-				prob = cp.Problem(objective, constraints)
-				prob.solve()
-				ucb[i,0] = prob.value
-			return ucb
-		else:
-			mu, sigma = self.mean_std(xtest)[0]
-			if lcb:
-				return mu - beta()*sigma
-			else:
-				return mu + beta() * sigma
-
-
-	def lcb(self, xtest, beta = lambda :2, bound = None):
-		return self.ucb(xtest, beta = beta, bound = bound, lcb = True)
-
 
 	def ucb_optimize(self, beta, multistart=25, lcb=False, minimizer="L-BFGS-B"):
 
@@ -631,8 +560,6 @@ class KernelizedFeatures(GaussianProcess):
 		mu, _ = self.mean_std(self.x)
 		out = torch.sum((mu - self.y) ** 2)
 		return out
-
-
 if __name__ == "__main__":
 	N = 10
 	s = 0.1

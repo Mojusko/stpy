@@ -187,7 +187,8 @@ class NystromFeatures(Embedding):
 			self.Dweights = torch.diag(self.weights).double()
 			K = torch.mm(torch.mm(self.Dweights, self.kernel(xs, xs)),
 						 self.Dweights)  # + self.s*self.s * torch.eye(self.ms, dtype=torch.float64)
-			(D, V) = torch.symeig(K, eigenvectors=True)
+			#(D, V) = torch.symeig(K, eigenvectors=True)
+			(D, V) = torch.linalg.eigh(K)
 			Dinv = torch.diag(1. / D)
 			Dinv[Dinv <= 0] = 0
 			Dinv = torch.sqrt(Dinv)

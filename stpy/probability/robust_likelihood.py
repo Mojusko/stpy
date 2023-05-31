@@ -15,7 +15,7 @@ class RobustGraphicalLikelihood(Likelihood):
     def evaluate_log(self, f):
         pass
 
-    def evaluate_point(self, theta, d):
+    def evaluate_datapoint(self, theta, d):
         x, y = d
         return torch.log(1 + torch.exp())
 
@@ -29,7 +29,7 @@ class RobustGraphicalLikelihood(Likelihood):
         self.x, self.y = D
         self.fitted = False
 
-    def get_cvxpy_objective(self, mask = None):
+    def get_objective_cvxpy(self, mask = None):
         if mask is None:
             if self.Sigma is None:
                 def likelihood(theta): return cp.sum(cp.abs(self.x@theta - self.y)/self.sigma)
@@ -52,7 +52,7 @@ class RobustGraphicalLikelihood(Likelihood):
                         return cp.sum(theta*0)
         return likelihood
 
-    def get_cvxpy_confidence_set(self,
+    def get_confidence_set_cvxpy(self,
                                  theta: cp.Variable,
                                  type: Union[str, None] = None,
                                  params: Dict = {},
@@ -75,7 +75,7 @@ class RobustGraphicalLikelihood(Likelihood):
             set = self.set_fn(theta)
 
         elif type == "LR":
-            set = self.lr_confidence_set(theta, beta, params)
+            set = self.lr_confidence_set_cvxpy(theta, beta, params)
 
         else:
             raise NotImplementedError("The desired confidence set type is not supported.")
@@ -86,5 +86,5 @@ class RobustGraphicalLikelihood(Likelihood):
         return set
 
 
-    def get_torch_objective(self):
+    def get_objective_torch(self):
         raise NotImplementedError("Implement me please.")

@@ -16,7 +16,15 @@ class HuberLikelihood(GaussianLikelihood):
     def evaluate_log(self, f):
         pass
 
-    def evaluate_point(self, theta, d):
+    def scale(self, err = None):
+        if self.Sigma is None:
+            return self.sigma**2
+        else:
+            return torch.max(self.Sigma.T@self.Sigma)
+
+    def evaluate_datapoint(self, theta, d, mask = None):
+        if mask is None:
+            mask = 1.
         x, y = d
         res = (x @ theta - y) / self.sigma
         mask1 = torch.abs(res) < self.M
@@ -24,7 +32,7 @@ class HuberLikelihood(GaussianLikelihood):
         v = res
         v[mask1] = res[mask1] ** 2
         v[mask2] = 2 * self.M * torch.abs(res[mask2]) - self.M ** 2
-        return torch.sum(v)
+        return torch.sum(v)*mask
 
     def add_data_point(self, d):
         x, y = d
@@ -36,7 +44,7 @@ class HuberLikelihood(GaussianLikelihood):
         self.x, self.y = D
         self.fitted = False
 
-    def get_cvxpy_objective(self, mask=None):
+    def get_objective_cvxpy(self, mask=None):
         if mask is None:
             def likelihood(theta):
                 return cp.sum(cp.huber((self.x @ theta - self.y) / self.sigma))
@@ -53,5 +61,5 @@ class HuberLikelihood(GaussianLikelihood):
         return V
 
 
-    def get_torch_objective(self):
+    def get_objective_torch(self):
         raise NotImplementedError("Implement me please.")

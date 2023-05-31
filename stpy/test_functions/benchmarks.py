@@ -3,6 +3,7 @@ import torch
 
 import stpy
 from stpy.test_functions.swissfel_simulator import FelSimulator
+from stpy.continuous_processes.gauss_procc import GaussianProcess
 
 
 class BenchmarkFunction():
@@ -20,9 +21,12 @@ class BenchmarkFunction():
 			raise AssertionError("Invalid dimension for the Benchmark function ...")
 		pass
 
-	def eval(self, X, sigma=0.):
+	def eval(self, X, sigma=None):
 		z = self.eval_noiseless(X)
-		y = z + sigma * torch.randn(X.size()[0], 1, dtype=torch.float64)
+		if sigma is None:
+			y = z/self.scale + self.s * torch.randn(X.size()[0], 1, dtype=torch.float64)
+		else:
+			y = z/self.scale + sigma * torch.randn(X.size()[0], 1, dtype=torch.float64)
 		return y
 
 	def optimum(self):
@@ -36,7 +40,7 @@ class BenchmarkFunction():
 		return self.max
 
 	def maximum_discrete(self, xtest):
-		maximum = torch.abs(torch.max(self.eval_noiseless(xtest)))
+		maximum =torch.max(self.eval_noiseless(xtest))
 		return maximum
 
 	def maximum_continuous(self):
@@ -105,20 +109,6 @@ class BenchmarkFunction():
 			grid_z = griddata((xx, yy), self.eval_noiseless(xtest)[:, 0].numpy(), (grid_x, grid_y), method='linear')
 			ax.plot_surface(grid_x, grid_y, grid_z, color='b', alpha=0.4)
 			plt.show()
-
-
-class CustomBenchmakr(BenchmarkFunction):
-
-	def __init__(self, **kwargs):
-		super().__init__(**kwargs)
-
-	def set_eval(self, f):
-		self.eval = f
-
-	def eval_noiseless(self, X):
-		super().eval_noiseless(X)
-		y = self.eval(X)
-		return y / self.scale
 
 
 class CamelbackBenchmark(BenchmarkFunction):
@@ -230,7 +220,7 @@ class MichalBenchmark(BenchmarkFunction):
 		ytest = self.eval(xtest, sigma=sigma)
 		kernel = stpy.kernels.KernelFunction(kernel_name="ard", gamma=torch.ones(self.d, dtype=torch.float64) * 0.1,
 											 groups=self.groups)
-		GP = stpy.continuous_processes.gauss_procc.GaussianProcess(kernel=kernel, s=sigma, d=self.d)
+		GP = GaussianProcess(kernel=kernel, s=sigma, d=self.d)
 		GP.fit_gp(xtest, ytest)
 		#GP.optimize_params(type="bandwidth", restarts=restarts)
 		#print("Optimized")
@@ -271,7 +261,7 @@ class StybTangBenchmark(BenchmarkFunction):
 	def __init__(self, **kwargs):
 		super().__init__(**kwargs)
 		self.d = kwargs['d']
-		self.type = "continuous"
+		self.type = "discrete"
 		if 'R' in kwargs:
 			self.R = kwargs['R']
 			print("Stybtang Problem: Rotating - no longer additive.")
@@ -287,27 +277,26 @@ class StybTangBenchmark(BenchmarkFunction):
 		X = X * 8
 		Y = X ** 2
 		sum_ = torch.sum(Y ** 2 - 16. * Y + 5 * X, dim=1).view(-1, 1)
-		return -0.5 * sum_ / (d * 200.) + 0.5
+		return -(0.5 * sum_ / (d * 200.) + 0.5)/self.scale
 
-	def maximum_continuous(self):
-		opt = np.ones(shape=(self.d)) * (-2.9035) / 8
-		opt = torch.from_numpy(opt.reshape(1, -1))
-		value = self.eval_noiseless(opt)[0][0] * 16
-		return value
-
-	def optimize(self, xtest, sigma, restarts=5, n=512):
-		xtest = torch.zeros(n, self.d, dtype=torch.float64)
-		xtest[:, 0] = torch.linspace(-0.5, 0.5, n, dtype=torch.float64)
-		ytest = self.eval(xtest, sigma=sigma)
-		kernel = stpy.kernels.KernelFunction(kernel_name="ard", gamma=torch.ones(self.d, dtype=torch.float64) * 0.1,
-											 groups=self.groups)
-		GP = stpy.continuous_processes.gauss_procc.GaussianProcess(kernel_custom=kernel, s=sigma, d=self.d)
-		GP.fit(xtest, ytest)
-		GP.optimize_params(type="bandwidth", restarts=restarts)
-		print("Optimized")
-		self.gamma = torch.min(kernel.gamma)
-		return self.gamma
-
+	# def maximum_continuous(self):
+	# 	opt = np.ones(shape=(self.d)) * (-2.9035) / 8
+	# 	opt = torch.from_numpy(opt.reshape(1, -1))
+	# 	value = self.eval_noiseless(opt)[0][0] * 16
+	# 	return value
+	#
+	# def optimize(self, xtest, sigma, restarts=5, n=512):
+	# 	xtest = torch.zeros(n, self.d, dtype=torch.float64)
+	# 	xtest[:, 0] = torch.linspace(-0.5, 0.5, n, dtype=torch.float64)
+	# 	ytest = self.eval(xtest, sigma=sigma)
+	# 	kernel = stpy.kernels.KernelFunction(kernel_name="ard", gamma=torch.ones(self.d, dtype=torch.float64) * 0.1,
+	# 										 groups=self.groups)
+	# 	GP = GaussianProcess(kernel_custom=kernel, s=sigma, d=self.d)
+	# 	GP.fit(xtest, ytest)
+	# 	GP.optimize_params(type="bandwidth", restarts=restarts)
+	# 	print("Optimized")
+	# 	self.gamma = torch.min(kernel.gamma)
+	# 	return self.gamma
 
 class GeneralizedAdditiveOverlap(BenchmarkFunction):
 
@@ -351,22 +340,48 @@ class SwissFEL(BenchmarkFunction):
 		name = kwargs['dts']
 		self.Simulator = FelSimulator(self.d, 0.0, "quadrupoles_2d")
 		self.Simulator.load_fresh(name, dts='0')
-		GP = stpy.continuous_processes.gauss_procc.GaussianProcess(groups=stpy.helpers.helper.full_group(self.d),
-																   gamma=torch.ones(self.d, dtype=torch.float64),
-																   kernel="ard")
+		#self.groups = stpy.helpers.helper.full_group(self.d)
+		GP = GaussianProcess(kernel_name="ard", d = self.d)
 		self.Simulator.fit_simulator(GP, optimize="bandwidth", restarts=2)
-		self.groups = stpy.helpers.helper.full_group(self.d)
 		self.type = "continuous"
-		self.gamma = torch.min(self.Simulator.GP.kernel_object.gamma)
-
-	def optimize(self, xtest, sigma, restarts=5):
-		pass
+		self.s = self.Simulator.s
 
 	def eval_noiseless(self, X):
 		super().eval_noiseless(X)
 		y = self.Simulator.eval(X, sigma=0)
 		return y
 
+	def maximum(self, xtest=None):
+		return torch.max(self.Simulator.eval(xtest,sigma = 0))
+
+
+class CustomBenchmark(BenchmarkFunction):
+
+	def __init__(self, **kwargs):
+		super().__init__(**kwargs)
+		if 'func' in kwargs:
+			self.eval_f = kwargs['func']
+		else:
+			self.eval_f = lambda x: x[:, 0].view(-1, 1) * 0
+		if 'likelihood' in kwargs:
+			self.likelihood = kwargs['likelihood']
+		else:
+			self.likelihood = None
+
+	def set_eval(self, f, scale=1.):
+		self.eval_f = f
+		self.scale = scale
+
+	def eval_noiseless(self, X):
+		#super().eval_noiseless(X)
+		y = self.eval_f(X)
+		return y / self.scale
+
+	def eval(self, X):
+		if self.likelihood is not None:
+			return self.eval_noiseless(X)+self.likelihood.sample_noise(X)
+		else:
+			return self.eval_noiseless(X)
 
 class GaussianProcessSample(BenchmarkFunction):
 
@@ -462,17 +477,12 @@ class Simple1DFunction(BenchmarkFunction):
 
 	def eval_noiseless(self, X):
 		super().eval_noiseless(X)
-		X = X * 8
-		a = 0.5
-		y = -torch.sin(a * torch.sum(X ** 2, dim=1)).view(-1, 1)
-		y = y / self.scale
+		z = (X+0.5)*1.2
+		y = -(1.4-3*z)*torch.sin(18*z)
 		return y
 
-	def maximum(self, xtest=None):
-		return 1.0
-# opt = torch.zeros(self.d, dtype = torch.float64)
-# return self.eval_noiseless(opt)
-
+	def maximum(self, xtest):
+		return torch.max(torch.abs(self.eval_noiseless(xtest)))
 
 class MultiRKHS(BenchmarkFunction):
 

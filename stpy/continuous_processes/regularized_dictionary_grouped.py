@@ -1,29 +1,16 @@
-from typing import Union, Tuple, List
-
 import cvxpy as cp
 import mosek
-import numpy as np
-import torch
-from scipy.optimize import minimize
 
-from stpy.continuous_processes.regularized_dictionary import RegularizedDictionary
-from stpy.embeddings.embedding import Embedding
-from stpy.estimator import Estimator
-from stpy.helpers.constraints import Constraints
-from stpy.probability.likelihood import Likelihood
-from stpy.probability.regularizer import L2Regularizer, Regularizer
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
 from stpy.continuous_processes.regularized_dictionary import RegularizedDictionary
-from stpy.embeddings.embedding import HermiteEmbedding, RFFEmbedding, ConcatEmbedding
-from stpy.embeddings.bump_bases import FaberSchauderEmbedding, TriangleEmbedding
-from stpy.embeddings.weighted_embedding import WeightedEmbedding
+from stpy.embeddings.embedding import ConcatEmbedding
+from stpy.embeddings.bump_bases import TriangleEmbedding
 from stpy.probability.gaussian_likelihood import GaussianLikelihood
-from stpy.probability.regularizer import L2Regularizer, L1Regularizer, GroupL1L2Regularizer, NestedGroupL1L2Regularizer,NestedGroupL1Regularizer
+from stpy.regularization.regularizer import NestedGroupL1L2Regularizer
 from stpy.helpers.helper import interval_torch
-from stpy.helpers.constraints import QuadraticInequalityConstraint, AbsoluteValueConstraint
 from stpy.kernels import KernelFunction
 
 class GroupedRegularizedDictionary(RegularizedDictionary):
@@ -68,8 +55,8 @@ class GroupedRegularizedDictionary(RegularizedDictionary):
                 else:
                     z = z+e
             print (z)
-            likelihood = self.likelihood.get_cvxpy_objective()
-            regularizer = self.regularizer.get_cvxpy_regularizer()
+            likelihood = self.likelihood.get_objective_cvxpy()
+            regularizer = self.regularizer.get_regularizer_cvxpy()
 
 
             objective = likelihood(w) + regularizer(w)
@@ -87,27 +74,6 @@ class GroupedRegularizedDictionary(RegularizedDictionary):
             self.thetas_fit = [torch.from_numpy(theta.value) for theta in thetas]
             self.theta_fit = sum(self.thetas_fit)
             self.fitted = True
-
-
-    # def lcb(self, xtest: torch.Tensor, type=None, arg=False, sign=1.):
-    #     theta = cp.Variable((self.m, 1))
-    #     args = []
-    #     n = xtest.size()[0]
-    #     values = torch.zeros(size=(n, 1)).double()
-    #     Phi = self.embed(xtest)
-    #
-    #     for j in range(n):
-    #         objective = sign * Phi[j, :] @ theta
-    #         value, theta_lcb = self.objective_on_confidence_set(theta, objective, type=type)
-    #         values[j] = sign * value
-    #         if arg:
-    #             args.append(theta_lcb)
-    #
-    #     if args:
-    #         return values, args
-    #     else:
-    #         return values
-    #
 
 if __name__ == "__main__":
     sigma = 0.005

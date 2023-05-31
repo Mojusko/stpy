@@ -240,9 +240,6 @@ class GaussianProcessFF(KernelizedFeatures):
 
 		return logprob
 
-	def optimize_params(self, type="bandwidth", repeats=10, optimizer="pymanopt"):
-		pass
-
 	def mean_std(self, xtest, reuse=False):
 		'''
 			Calculate mean and variance for GP at xtest points

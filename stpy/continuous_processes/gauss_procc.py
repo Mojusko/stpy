@@ -42,7 +42,7 @@ class GaussianProcess(Estimator):
 		self.prob = 0.5
 		self.svr_eps = svr_eps
 		self.safe = False
-		self.fit = False
+		self.fitted = False
 		self.diameter = diameter
 		self.bounds = bounds
 		self.admits_first_order = False
@@ -110,6 +110,29 @@ class GaussianProcess(Estimator):
 			self.Sigma = Sigma
 		self.fit_gp(self.x, self.y, Sigma = self.Sigma)
 
+	def fit(self, x=None, y=None):
+		if x is not None:
+			self.fit_gp(x,y)
+		else:
+			self.fit_gp(self.x,self.y)
+
+	def lcb(self, xtest):
+		"""
+		Lower confidence bound
+		:return:
+		"""
+		mu, s = self.mean_std(xtest)
+		return mu - 2 * s
+
+	def ucb(self, xtest):
+		"""
+		Upper confidence bound
+		:param xtest:
+		:return:
+		"""
+		mu, s = self.mean(xtest)
+		return mu + 2*s
+
 	def fit_gp(self, x, y, Sigma = None, iterative=False, extrapoint=False):
 		"""
 		Fits the Gaussian process, possible update is via iterative inverse
@@ -130,7 +153,7 @@ class GaussianProcess(Estimator):
 		else:
 			self.Sigma = Sigma
 
-		if (self.fit == False or iterative == False):
+		if (self.fitted == False or iterative == False):
 
 			if self.safe == True:
 				x = self.make_safe(x)
@@ -138,7 +161,7 @@ class GaussianProcess(Estimator):
 			self.x = x
 			self.y = y
 			self.K = self.kernel(x, x) + self.Sigma.T @ self.Sigma
-			self.fit = True
+			self.fitted = True
 		else:
 			# iterative inverse
 			if (iterative == True):
@@ -154,7 +177,7 @@ class GaussianProcess(Estimator):
 		return None
 
 	def norm(self):
-		if self.fit:
+		if self.fitted:
 			val = torch.sqrt(self.A.T @ self.kernel(self.x, self.x) @ self.A)
 			return val
 		else:
@@ -178,7 +201,7 @@ class GaussianProcess(Estimator):
 		:param xtest:
 		:return:
 		"""
-		if self.fit == True:
+		if self.fitted == True:
 			K_star = self.kernel(self.x, xtest)
 		else:
 			K_star = None
@@ -323,7 +346,7 @@ class GaussianProcess(Estimator):
 			K_star = self.kernel(self.x, xtest)
 			diag_K_star_star = torch.hstack([self.kernel(xtest[i,:].view(1,-1),xtest[i,:].view(1,-1)).view(1) for i in range(xtest.size()[0])])
 
-		if self.fit == False:
+		if self.fitted == False:
 			# the process is not fitted
 
 			if full == False:
@@ -343,9 +366,11 @@ class GaussianProcess(Estimator):
 
 			if self.back_prop == False:
 				if reuse == False:
-					self.decomp = torch.lu(self.K.unsqueeze(0))
-					self.A = torch.lu_solve(self.y.unsqueeze(0), *self.decomp)[0, :, :]
-				self.B = torch.t(torch.lu_solve(torch.t(K_star).unsqueeze(0), *self.decomp)[0, :, :])
+					#self.decomp = torch.lu(self.K.unsqueeze(0))
+					self.LU, self.pivot = torch.linalg.lu_factor(self.K.unsqueeze(0))
+					#self.A = torch.lu_solve(self.y.unsqueeze(0), *self.decomp)[0, :, :]
+					self.A = torch.linalg.lu_solve(self.LU, self.pivot, self.y.unsqueeze(0))[0,:,:]
+				self.B = torch.t(torch.linalg.lu_solve(self.LU, self.pivot ,torch.t(K_star).unsqueeze(0))[0, :, :])
 			else:
 				if reuse == False:
 					self.A = torch.linalg.lstsq(self.K, self.y)[0]
@@ -442,7 +467,7 @@ class GaussianProcess(Estimator):
 		"""
 		nn = list(xtest.size())[0]
 
-		if self.fit == True:
+		if self.fitted == True:
 			(ymean, yvar) = self.mean_std(xtest, full=True)
 			Cov = yvar + 10e-10 * torch.eye(nn, dtype=torch.float64)
 			L = torch.linalg.cholesky(Cov)

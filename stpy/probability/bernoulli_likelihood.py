@@ -11,25 +11,36 @@ class BernoulliLikelihoodCanonical(GaussianLikelihood):
     def __init__(self):
         super().__init__()
 
-    def evaluate_point(self, theta, d):
+    def evaluate_datapoint(self, theta, d, mask = None):
+        if mask is None:
+            mask = 1.
         x, y = d
-        mu = 1./(1.+np.exp(-x@theta))
-        r = -y*torch.log(mu) - (1-y)*torch.log(1-mu)
+        r = -y*(x@theta) + torch.log(1+torch.exp(x@theta))
+        r = r * mask
         return r
 
-    def get_cvxpy_objective(self, mask = None):
+    def link(self, s):
+        return 1./(1.+ torch.exp(-s))
+
+    def scale(self, mask = None):
+        return 1.
+
+    def get_objective_cvxpy(self, mask = None):
         if mask is None:
             def likelihood(theta):
                 return -self.y.T@(self.x @ theta) + cp.sum(cp.logistic(self.x @ theta))
         else:
             def likelihood(theta):
-                if torch.sum(mask.int())>0:
-                    return -self.y[mask,:].T@(self.x[mask,:] @ theta) + cp.sum(cp.logistic(self.x[mask,:] @ theta))
+                if torch.sum(mask.double())>1e-8:
+                    return -(mask*self.y)@(self.x @ theta) + mask @ cp.logistic(self.x @ theta)
                 else:
                     return cp.sum(theta*0)
         return likelihood
 
-    def get_cvxpy_confidence_set(self,
+    def lipschitz_constant(self, b):
+        return np.exp(b)
+
+    def get_confidence_set_cvxpy(self,
                                  theta: cp.Variable,
                                  type: Union[str, None] = None,
                                  params: Dict = {},
@@ -39,27 +50,26 @@ class BernoulliLikelihoodCanonical(GaussianLikelihood):
 
         theta_fit = params['estimate']
         H = params['regularizer_hessian']
+        lam = torch.max(torch.linalg.eigvalsh(H))
+        B = params['bound']
+        d_eff = params['d_eff']
 
+        if type in ['faubry']:
+            D = torch.diag(1./(self.x @ theta_fit).view(-1))
+            V = self.x.T @ D @ self.x + H
 
-        # if H is not None:
-        #     V = self.information_matrix() + H
-        # else:
-        #     V = self.information_matrix()
+            beta = np.sqrt(lam*B) / 2. + 2. / np.sqrt(lam*B) * (torch.logdet(V) - torch.logdet(H)) + 2 / np.sqrt(
+                lam*B) * np.log(1 / delta) * d_eff
 
-        if type in ['Faubry']:
-            v = self.x @ theta_fit
-            V = self.x.T @torch.diag(v) @ self.x + H
             L = torch.from_numpy(scipy.linalg.sqrtm(V.numpy()))
-            beta = self.confidence_parameter(delta, params, type=type)
             self.set_fn = lambda theta: [cp.sum_squares(L @ (theta - theta_fit)) <= beta]
             set = self.set_fn(theta)
 
-        elif type in ['Filippi']:
+        elif type in ['laplace']:
             sigma = 1./4.
             V = self.x.T @ self.x / sigma**2 + H
-
             L = torch.from_numpy(scipy.linalg.sqrtm(V.numpy()))
-            beta = self.confidence_parameter(delta, params, type=type)
+            beta = 2. * self.lipschitz_constant(B)
             self.set_fn = lambda theta: [cp.sum_squares(L @ (theta - theta_fit)) <= beta]
             set = self.set_fn(theta)
 
@@ -67,13 +77,13 @@ class BernoulliLikelihoodCanonical(GaussianLikelihood):
             sigma = 1./4.
             V = self.x.T @ self.x / sigma**2 + H
             L = torch.from_numpy(scipy.linalg.sqrtm(V.numpy()))
-            beta = self.confidence_parameter(delta, params, type=type)
+            beta = 2 * np.log(1. / delta) + (torch.logdet(V + H) - torch.logdet(H)) + lam * B
             self.set_fn = lambda theta:  [cp.sum_squares(L@(theta - theta_fit)) <= beta]
             set = self.set_fn(theta)
 
         elif type == "LR":
             beta = self.confidence_parameter(delta, params, type=type)
-            set = self.lr_confidence_set(theta, beta, params)
+            set = self.lr_confidence_set_cvxpy(theta, beta, params)
 
         else:
             raise NotImplementedError("The desired confidence set type is not supported.")
@@ -91,10 +101,12 @@ class BernoulliLikelihoodCanonical(GaussianLikelihood):
         H = params['regularizer_hessian']
         lam = torch.max(torch.linalg.eigvalsh(H))
         B = params['bound']
+        d_eff = params['d_eff']
 
         if type is None or type == "none" or type == "laplace":
             # this is a common heuristic
             beta =  2.0
+
         elif type == "adaptive-AB":
             sigma = 1./4.
             V = self.x.T @ self.x / sigma ** 2 + H
@@ -107,10 +119,13 @@ class BernoulliLikelihoodCanonical(GaussianLikelihood):
         elif type == "Faubry":
             H = params['regularizer_hessian']
             lam = H[0., 0]
-            beta = np.sqrt(lam)/2.
+            theta_fit = params['estimate']
+            D = torch.diag(1./(self.x @ theta_fit).view(-1))
+            V = self.x.T @ D @ self.x + H
+            beta = np.sqrt(lam)/2. + 2./np.sqrt(lam)*(torch.logdet(V) - torch.logdet(H)) + 2/np.sqrt(lam)* np.log(1/delta)*d_eff
         else:
             raise NotImplementedError("Not implemented")
         return beta
 
-    def get_torch_objective(self):
+    def get_objective_torch(self):
         raise NotImplementedError("Implement me please.")

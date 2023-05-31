@@ -160,6 +160,10 @@ class PolynomialEmbedding():
 
 class ChebyschevEmbedding():
 
+
+	def get_m(self):
+		return self.m
+
 	def __init__(self, d, p, groups=None, include_bias=True):
 		self.d = d
 		self.p = p
@@ -167,6 +171,7 @@ class ChebyschevEmbedding():
 		self.c = np.ones(self.p)
 		self.poly = cheb.Chebyshev(self.c)
 		self.size = self.p
+		self.m = self.p
 
 	def embed(self, x):
 		out = np.zeros(shape=(int(x.size()[0]), self.p))
