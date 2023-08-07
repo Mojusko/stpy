@@ -130,7 +130,7 @@ class GaussianProcess(Estimator):
 		:param xtest:
 		:return:
 		"""
-		mu, s = self.mean(xtest)
+		mu, s = self.mean_std(xtest)
 		return mu + 2*s
 
 	def fit_gp(self, x, y, Sigma = None, iterative=False, extrapoint=False):

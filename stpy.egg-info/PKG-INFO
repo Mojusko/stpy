@@ -1,0 +1,8 @@
+Metadata-Version: 2.1
+Name: stpy
+Version: 0.0.2
+Summary: Stochastic Process Library for Python
+Home-page: 
+Author: Mojmir Mutny
+Author-email: mojmir.mutny@inf.ethz.ch
+License: custom 

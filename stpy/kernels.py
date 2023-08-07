@@ -11,12 +11,13 @@ class KernelFunction:
 
 	def __init__(self, kernel_function=None, kernel_name="squared_exponential", \
 				 freq=None, groups=None, d=1, gamma=1, ard_gamma=None, nu=1.5, kappa=1, map=None, power=2,
-				 cov=None, params=None, group=None):
+				 cov=None, params=None, group=None, offset = 0. ):
 
 		if kernel_function is not None:
 			self.kernel_function = kernel_function
 			self.optkernel = "custom"
 			self.kappa = kappa
+			self.offset = offset
 			if params is None:
 				self.params = {'kappa': self.kappa}
 			else:
@@ -29,6 +30,7 @@ class KernelFunction:
 				self.group = group
 			self.d = d
 		else:
+			self.offset = offset
 			self.optkernel = kernel_name
 			self.gamma = gamma
 			if ard_gamma is None:
@@ -164,7 +166,7 @@ class KernelFunction:
 
 	def get_kernel_internal(self, diag = False):
 
-		self.params = {**self.initial_params, 'kappa': self.kappa, 'group': self.group}
+		self.params = {**self.initial_params, 'kappa': self.kappa, 'group': self.group, 'offset': self.offset}
 
 		if self.optkernel == "squared_exponential":
 			self.params = dict(**self.params, **{'gamma': self.gamma})
@@ -219,6 +221,10 @@ class KernelFunction:
 		elif self.optkernel == "full_covariance_se":
 			self.params = dict(**self.params, **{'cov': self.cov})
 			return self.covar_kernel
+
+		elif self.optkernel == "full_covariance_matern":
+			self.params = dict(**self.params, **{'cov': self.cov, 'nu': self.v})
+			return self.covar_kernel_matern
 
 		elif (self.optkernel == "polynomial") and (self.groups is None):
 			self.params = dict(**self.params, **{'degree': self.power})
@@ -305,9 +311,13 @@ class KernelFunction:
 		else:
 			group = self.group
 
+		if 'offset' in kwargs.keys():
+			offset = kwargs['offset']
+		else:
+			offset = self.offset
 		a = a[:, group]
 		b = b[:, group]
-		return kappa * (b @ a.T)
+		return kappa * (b @ a.T) + offset
 
 	def custom_map_kernel(self, a, b, **kwargs):
 		if 'kappa' in kwargs.keys():
@@ -482,11 +492,62 @@ class KernelFunction:
 		normy = torch.sum(b ** 2, dim=1).reshape(-1, 1)
 
 		product = torch.mm(b, torch.t(a))
-		# sqdist = torch.tile(normx, b.shape[0]).T + torch.tile(normy, a.shape[0]) - 2 * product
 		sqdist = -2 * product + torch.t(normx) + normy
 		arg = - 0.5 * sqdist
 		res = torch.exp(arg)
 		return kappa * res
+
+
+	def covar_kernel_matern(self, a, b, **kwargs):
+		"""
+		:param a:
+		:param b:
+		:param cov: square-root of the covariance matrix
+		:return:
+		"""
+
+		if 'kappa' in kwargs.keys():
+			kappa = kwargs['kappa']
+		else:
+			kappa = self.kappa
+
+		if 'cov' in kwargs.keys():
+			cov = kwargs['cov']
+		else:
+			cov = self.cov
+		if 'v' in kwargs.keys():
+			v = kwargs['v']
+		else:
+			v = self.v
+		if 'group' in kwargs.keys():
+			group = kwargs['group']
+		else:
+			group = self.group
+
+		a = a[:, group]
+		b = b[:, group]
+		a = torch.mm(a, cov)
+		b = torch.mm(b, cov)
+
+		dists = torch.cdist(a, b, p=2).T
+
+		if v == 0.5:
+			K = torch.exp(-dists)
+		elif v == 1.5:
+			K = dists * np.sqrt(3)
+			K = (1. + K) * torch.exp(-K)
+		elif v == 2.5:
+			K = dists * np.sqrt(5)
+			K = (1. + K + K ** 2 / 3.0) * torch.exp(-K)
+		else:  # general case; expensive to evaluate
+			K = dists
+			K[K == 0.0] += np.finfo(float).eps  # strict zeros result in nan
+			tmp = (np.sqrt(2 * v) * K)
+			K.fill((2 ** (1. - v)) / math.gamma(v))
+			K *= tmp ** v
+			K *= kv(v, tmp)
+		return kappa * K
+
 
 	def ard_kernel(self, a, b, **kwargs):
 

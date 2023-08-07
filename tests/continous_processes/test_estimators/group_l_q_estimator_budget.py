@@ -1,28 +1,21 @@
 import torch
-import numpy as np
 import matplotlib.pyplot as plt
-from stpy.continuous_processes.regularized_dictionary import RegularizedDictionary
-from stpy.embeddings.embedding import HermiteEmbedding, RFFEmbedding, ConcatEmbedding, MaskedEmbedding
-from stpy.embeddings.bump_bases import FaberSchauderEmbedding, TriangleEmbedding
-from stpy.embeddings.weighted_embedding import WeightedEmbedding
-from stpy.probability.gaussian_likelihood import GaussianLikelihood
-from stpy.probability.regularizer import L2Regularizer, L1Regularizer, GroupL1L2Regularizer, NonConvexLqRegularizer, GroupNonCovexLqRegularizer
+from stpy.embeddings.embedding import ConcatEmbedding
 from stpy.continuous_processes.nystrom_fea import NystromFeatures
 from stpy.helpers.helper import interval_torch
-from stpy.helpers.constraints import QuadraticInequalityConstraint, AbsoluteValueConstraint
 from stpy.kernels import KernelFunction
-from scipy.ndimage import gaussian_filter
-
+from stpy.regularization.simplex_regularizer import SupRegularizer
+from stpy.continuous_processes.mkl_estimator import MultipleKernelLearner
 """
 This script test and compares Lq estimators 
  compare L1, L2 and Lq estimators
 """
 
-m = 64
+m = 128
 d = 1
 sigma = 0.01
 lam = 1.
-n = 64
+n = 128
 N = 10
 
 kernel_object = KernelFunction(gamma = 0.05, d = 1)
@@ -30,44 +23,69 @@ kernel_object = KernelFunction(gamma = 0.05, d = 1)
 xtest = interval_torch(n = n,d = 1)
 
 embedding1 = NystromFeatures(kernel_object = kernel_object, m = m )
-embedding1.fit_gp(xtest/2-0.5,None)
+embedding1.fit_gp(xtest/2-0.7,None)
 embedding2 = NystromFeatures(kernel_object = kernel_object, m = m )
-embedding2.fit_gp(xtest/2+0.5,None)
+embedding2.fit_gp(xtest/2+0.7,None)
 embedding = ConcatEmbedding([embedding1,embedding2])
 
-qs = [0.01]
-groups = [list(range(m)), list(range(m, 2 * m, 1))]
-print (groups)
+def k1(x,y,**kwagrs):
+    return (embedding1.embed(x)@embedding1.embed(y).T).T
 
-regularizers = []
-#regularizers += [L1Regularizer(lam = lam), L2Regularizer(lam = lam)]
-#regularizers += [NonConvexLqRegularizer(lam = lam, q = q) for q in qs]
-regularizers += [GroupNonCovexLqRegularizer(lam = lam, q = q, groups=groups) for q in qs]
+def k2(x,y,**kwagrs):
+    return (embedding2.embed(x)@embedding2.embed(y).T).T
 
-likelihood = GaussianLikelihood(sigma=sigma)
-names = []
-#names += ["L1", "L2"]
-#   names += ["L"+str(q) for q in qs]
-names += ["group L"+str(q) for q in qs]
+kernel_object_1 = KernelFunction(kernel_function = k1)
+kernel_object_2 = KernelFunction(kernel_function = k2)
 
-f = lambda x: torch.sin(x*20)
-Xtrain = interval_torch(n = N, d= 1)
+kernels = [kernel_object_1, kernel_object_2]
+regularizer = SupRegularizer(d=len(kernels), lam=0.99, constrained=True)
+mkl = MultipleKernelLearner(kernels, regularizer=regularizer)
+
+f = lambda x: torch.sin(x*20)*(x<0).double() + (1e-5)*torch.sin(x*20)*(x>0).double()
+Xtrain = interval_torch(n = N, d= 1, L_infinity_ball=0.25) - 0.75
 ytrain = f(Xtrain)
 
-for name,regularizer in zip(names,regularizers):
-    estimator = RegularizedDictionary(embedding, likelihood, regularizer)
-    estimator.load_data((Xtrain,ytrain))
-    estimator.fit()
-    mean = estimator.mean(xtest)
+#
+# qs = [0.1]
+# groups = [list(range(m)), list(range(m, 2 * m, 1))]
+# print (groups)
+#
+# total_norms = [[20,20,10,10,10]]
+# for pos,total_norm in enumerate(total_norms):
+#     lasso_regularizer = L1Regularizer(lam = lam)
+#     l2_regularizer = L2Regularizer(lam = lam)
+#
+#     regularizers = []
+#     regularizers += [l2_regularizer, l2_regularizer]
+#     regularizers += [ l2_regularizer for _ in qs]
+#     constraints = [lasso_regularizer.get_constraint_object(total_norm[0]), l2_regularizer.get_constraint_object(total_norm[1])]
+#     constraints += [ NonConvexGroupNormConstraint(q, total_norm[2+index], m, groups) for index,q in enumerate(qs)]
+#
+#     likelihood = GaussianLikelihood(sigma=sigma)
+#     names = []
+#     names += ["L1", "L2"]
+#     #   names += ["L"+str(q) for q in qs]
+#     names += ["group "+str(q) for q in qs]
+#
 
-    p = plt.plot(xtest, mean, label=name, lw=3, alpha=0.5)
+#     linestyles = ['-.','-','--',"--","--"]
+#     colorstyles = ['tab:red', 'tab:orange', 'tab:blue', 'tab:green', 'tab:brown']
+#     for name, regularizer, constraint, linestyle, color in zip(names, regularizers, constraints, linestyles, colorstyles):
+#         estimator = RegularizedDictionary(embedding, likelihood, regularizer, constraints=constraint, use_constraint=True)
+#         estimator.load_data((Xtrain,ytrain))
+#         estimator.fit()
+#         mean = estimator.mean(xtest)
+#         lcb = estimator.lcb(xtest)
+#         ucb = estimator.ucb(xtest)
+#         p = plt.plot(xtest, mean, label=name, linestyle = linestyle, lw = 3, color = color )
+#         plt.fill_between(xtest.view(-1),lcb.view(-1),ucb.view(-1), alpha = 0.2, color = p[0].get_color())
+#         print(name, "support:", torch.sum(estimator.theta_fit > 0.01))
+#         print (estimator.theta_fit.T)
 
-    ucb = estimator.ucb(xtest, type="LR_static")
-    lcb = estimator.lcb(xtest, type="LR_static")
-    plt.fill_between(xtest.view(-1), lcb.view(-1), ucb.view(-1), alpha=0.1, color=p[0].get_color())
-
-    print(name, "support:", torch.sum(estimator.theta_fit > 1e-8))
-
+mkl.load_data((Xtrain, ytrain))
+mkl.fit()
+mean = mkl.mean(xtest)
+p = plt.plot(xtest, mean, label="MKL", linestyle="-", lw=3, color='tab:purple')
 
 plt.plot(Xtrain,ytrain,'ko', lw = 3)
 plt.plot(xtest,f(xtest),'k--', lw = 3)

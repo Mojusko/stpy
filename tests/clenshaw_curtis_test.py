@@ -34,3 +34,4 @@ if __name__ == "__main__":
 
 	#CFF.fit_gp(x,y)
 	#CFF.visualize(xtest)
+

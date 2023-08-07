@@ -3,13 +3,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from stpy.continuous_processes.regularized_dictionary import RegularizedDictionary
-from stpy.embeddings.embedding import HermiteEmbedding, RFFEmbedding, ConcatEmbedding
-from stpy.embeddings.bump_bases import FaberSchauderEmbedding, TriangleEmbedding
-from stpy.embeddings.weighted_embedding import WeightedEmbedding
+from stpy.embeddings.embedding import ConcatEmbedding
+from stpy.embeddings.bump_bases import TriangleEmbedding
 from stpy.probability.gaussian_likelihood import GaussianLikelihood
-from stpy.probability.regularizer import L2Regularizer, L1Regularizer, GroupL1L2Regularizer, NestedGroupL1L2Regularizer,NestedGroupL1Regularizer
+from stpy.regularization.regularizer import NestedGroupL1L2Regularizer
 from stpy.helpers.helper import interval_torch
-from stpy.helpers.constraints import QuadraticInequalityConstraint, AbsoluteValueConstraint
 from stpy.kernels import KernelFunction
 
 m = 200

@@ -2,16 +2,12 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from stpy.continuous_processes.regularized_dictionary import RegularizedDictionary
-from stpy.embeddings.embedding import HermiteEmbedding, RFFEmbedding, ConcatEmbedding, MaskedEmbedding
-from stpy.embeddings.bump_bases import FaberSchauderEmbedding, TriangleEmbedding
-from stpy.embeddings.weighted_embedding import WeightedEmbedding
+from stpy.embeddings.embedding import HermiteEmbedding, ConcatEmbedding
 from stpy.probability.gaussian_likelihood import GaussianLikelihood
-from stpy.probability.regularizer import L2Regularizer, L1Regularizer, GroupL1L2Regularizer
+from stpy.regularization.regularizer import GroupL1L2Regularizer
 from stpy.continuous_processes.nystrom_fea import NystromFeatures
 from stpy.helpers.helper import interval_torch
-from stpy.helpers.constraints import QuadraticInequalityConstraint, AbsoluteValueConstraint
 from stpy.kernels import KernelFunction
-from scipy.ndimage import gaussian_filter
 
 m = 128
 d = 1
