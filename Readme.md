@@ -1,9 +1,11 @@
 # Stochastic Process Library for Python (stpy)
 
+![Repository Icon](stpy.png)
+
 ## Installation
 First clone the repository:
 
-`git clone git@gitlab.inf.ethz.ch:mmutny/stpy.git`
+`git clone https://github.com/Mojusko/stpy`
 
 Inside the project directory, run
 
