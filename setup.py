@@ -4,7 +4,7 @@ packages = [
     'numpy',
     'scipy',
     'matplotlib',
-    'sklearn',
+    'scikit-learn',
     'tensorflow',
     'cvxpy',
     'torch',
