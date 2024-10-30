@@ -177,9 +177,9 @@ class KernelFunction:
 		elif self.optkernel == "ard" and (self.groups is None):
 			self.params = dict(**self.params, **{'ard_gamma': self.ard_gamma})
 			if diag:
-				return self.ard_kernel
-			else:
 				return self.ard_kernel_diag
+			else:
+				return self.ard_kernel
 
 
 		elif self.optkernel == "linear":
@@ -383,6 +383,7 @@ class KernelFunction:
 
 		a = a[:, group]
 		b = b[:, group]
+		
 		#	print (a.shape, b.shape)
 		normx = torch.sum(a ** 2, dim=1).view(-1, 1)
 		normy = torch.sum(b ** 2, dim=1).view(-1, 1)
@@ -411,6 +412,7 @@ class KernelFunction:
 
 		a = a[:, group]
 		b = b[:, group]
+
 		#	print (a.shape, b.shape)
 		normx = torch.sum(a ** 2, dim=1).view(-1, 1)
 		normy = torch.sum(b ** 2, dim=1).view(-1, 1)
@@ -515,9 +517,9 @@ class KernelFunction:
 		a = a[:, group]
 		b = b[:, group]
 
-		D = torch.diag(1. / (gamma[group]))
-		a = torch.mm(a, D)
-		b = torch.mm(b, D)
+		d = (1. / (gamma[group]))**2
+		a = torch.einsum('ij,j->ij',a, d)
+
 		normx = torch.sum(a ** 2, dim=1).reshape(-1, 1)
 		normy = torch.sum(b ** 2, dim=1).reshape(-1, 1)
 
@@ -548,9 +550,11 @@ class KernelFunction:
 		a = a[:, group]
 		b = b[:, group]
 
-		D = torch.diag(1. / (gamma[group]))
-		a = torch.mm(a, D)
-		b = torch.mm(b, D)
+		#D = torch.diag(1. / (gamma[group]))
+		d = (1. / (gamma[group]))**2
+		a = torch.einsum('ij,j->ij',a, d)
+		#a = torch.mm(a, D)
+		#b = torch.mm(b, D)
 		normx = torch.sum(a ** 2, dim=1).reshape(-1, 1)
 		normy = torch.sum(b ** 2, dim=1).reshape(-1, 1)
 
@@ -864,7 +868,7 @@ class KernelFunction:
 			K = dists
 			K[K == 0.0] += np.finfo(float).eps  # strict zeros result in nan
 			tmp = (math.sqrt(2 * v) * K)
-			K.fill((2 ** (1. - v)) / math.gamma(v))
+			K = torch.ones(size = K.size()).double() * (2 ** (1. - v)) / math.gamma(v)
 			K *= tmp ** v
 			K *= kv(v, tmp)
 		return kappa * K
