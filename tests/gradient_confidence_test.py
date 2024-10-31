@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from stpy.continuous_processes.gauss_procc import GaussianProcess
+from stpy.regression.gauss_procc import GaussianProcess
 from stpy.helpers.helper import interval
 #%matplotlib notebook
 

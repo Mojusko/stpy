@@ -6,12 +6,12 @@ import numpy as np
 from typing import Union
 import mosek
 import cvxpy as cp
-from stpy.continuous_processes.regularized_dictionary import RegularizedDictionary
+from stpy.regression.regularized_dictionary import RegularizedDictionary
 from stpy.embeddings.embedding import Embedding
 from stpy.probability.likelihood import Likelihood
 from stpy.optim.custom_optimizers import bisection
 from stpy.regularization.sdp_constraint import SDPConstraint
-from stpy.continuous_processes.nystrom_fea import NystromFeatures
+from stpy.regression.nystrom_fea import NystromFeatures
 
 
 class RegularizedDictionaryPSD(RegularizedDictionary):

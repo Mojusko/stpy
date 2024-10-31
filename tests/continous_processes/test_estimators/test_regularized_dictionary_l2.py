@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
-from stpy.continuous_processes.regularized_dictionary import RegularizedDictionary
+from stpy.regression.regularized_dictionary import RegularizedDictionary
 from stpy.embeddings.embedding import HermiteEmbedding, RFFEmbedding
 from stpy.embeddings.bump_bases import FaberSchauderEmbedding, TriangleEmbedding
 from stpy.embeddings.weighted_embedding import WeightedEmbedding

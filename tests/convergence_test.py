@@ -1,7 +1,7 @@
 from stpy.helpers.helper import *
 from stpy.embeddings.embedding import *
-from stpy.continuous_processes.fourier_fea import GaussianProcessFF
-from stpy.continuous_processes.gauss_procc import GaussianProcess
+from stpy.regression.fourier_fea import GaussianProcessFF
+from stpy.regression.gauss_procc import GaussianProcess
 import torch
 
 # domain size

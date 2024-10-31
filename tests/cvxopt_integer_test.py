@@ -2,7 +2,7 @@ import numpy as np
 import cvxopt
 import torch
 from cvxopt import glpk,solvers
-from stpy.continuous_processes.gauss_procc import GaussianProcess
+from stpy.regression.gauss_procc import GaussianProcess
 import matplotlib.pyplot as plt
 N = 128
 d = 30

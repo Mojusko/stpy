@@ -5,7 +5,6 @@ import cvxpy as cp
 import numpy as np
 import torch
 import copy
-import cdd
 
 
 class Constraints(ABC):

@@ -97,6 +97,12 @@ class GaussianProcess(Estimator):
 		# remove vectors that are very close to each other
 		return x
 
+	def add_points(self, d):
+		x,y = d
+		n = x.size()[0]
+		for i in range(n):
+			self.add_data_point(x[i,:].view(1,-1), y[i,:].view(1,-1))
+
 	def add_data_point(self, x, y, Sigma = None):
 
 		if self.x is not None:
@@ -111,6 +117,7 @@ class GaussianProcess(Estimator):
 			self.x = x
 			self.y = y
 			self.Sigma = Sigma
+		self.fitted = False
 		self.fit_gp(self.x, self.y, Sigma = self.Sigma)
 
 	def fit(self, x=None, y=None):
@@ -311,9 +318,14 @@ class GaussianProcess(Estimator):
 			return alpha.view(-1,1)
 
 	def mean_std(self, xtest, full=False, reuse=False):
+
+		# check if the correlation structure can fit to the memory
 		if xtest.size()[0]<self.max_size:
 			return self.mean_std_sub(xtest,full=full, reuse=reuse)
+
 		else:
+			# when working with large test which cannot fit to the memory
+
 			stepby = self.max_size
 			mu = torch.zeros(size=(xtest.size()[0], 1)).double()
 			std = torch.zeros(size=(xtest.size()[0], 1)).double()
@@ -345,13 +357,17 @@ class GaussianProcess(Estimator):
 		"""
 		if full:
 			(K_star, K_star_star) = self.execute(xtest)
+
 		else:
 			K_star = self.kernel(self.x, xtest)
+			# self.B = torch.t(torch.linalg.solve(self.K, torch.t(K_star)))
+			#diag_K_star_star = torch.hstack([self.kernel(xtest[i,:].view(1,-1),xtest[i,:].view(1,-1)).view(1) for i in range(xtest.size()[0])])
 			diag_K_star_star = torch.hstack([self.kernel(xtest[i,:].view(1,-1),xtest[i,:].view(1,-1)).view(1) for i in range(xtest.size()[0])])
-
+			#diag_K_star_star = self.kernel_object.kernel_diag(xtest,xtest)#[i, :].view(1, -1), xtest[i, :].view(1, -1)).view(1) for i in range(xtest.size()[0])])
+			# print (diag_K_star_star.size())
+			# diag_K_star_star = torch.diag(diag_K_star_star)
 		if self.fitted == False:
 			# the process is not fitted
-
 			if full == False:
 				x = torch.sum(xtest, dim=1)
 				#first = torch.diag(K_star_star).view(-1, 1)
@@ -362,32 +378,32 @@ class GaussianProcess(Estimator):
 				x = torch.sum(xtest, dim=1)
 				first = K_star_star
 				yvar = first
-
+			# mean zero process
 			return (0 * x.view(-1, 1), yvar)
 
 		else:
-
 			if self.back_prop == False:
 				if reuse == False:
-					#self.decomp = torch.lu(self.K.unsqueeze(0))
 					self.LU, self.pivot = torch.linalg.lu_factor(self.K.unsqueeze(0))
-					#self.A = torch.lu_solve(self.y.unsqueeze(0), *self.decomp)[0, :, :]
 					self.A = torch.linalg.lu_solve(self.LU, self.pivot, self.y.unsqueeze(0))[0,:,:]
 				self.B = torch.t(torch.linalg.lu_solve(self.LU, self.pivot ,torch.t(K_star).unsqueeze(0))[0, :, :])
 			else:
 				if reuse == False:
 					self.A = torch.linalg.lstsq(self.K, self.y)[0]
-				#self.B = torch.t(torch.linalg.solve(self.K, torch.t(K_star)))
 				self.B = torch.t(torch.linalg.lstsq(self.K, torch.t(K_star))[0])
 
 			if self.loss == "squared":
 				ymean = torch.mm(K_star, self.A)
+
 			elif self.loss == "huber":
 				ymean = self._huber_fit(K_star)
+
 			elif self.loss == "svr":
 				ymean = self._svr_fit(K_star)
+
 			elif self.loss == "unif"  or self.loss == "unif_new":
 				ymean = self._unif_fit_torch(K_star)
+
 			else:
 				raise AssertionError("Loss function not implemented.")
 
@@ -409,17 +425,20 @@ class GaussianProcess(Estimator):
 		:param xtest: input
 		:return:
 		"""
-		K_star = self.kernel(self.x, xtest)
 
-		if self.loss == "squared":
-			ymean = torch.mm(K_star, self.A)
-		elif self.loss == "huber":
-			ymean = self._huber_fit(K_star)
+		if self.fitted:
+			K_star = self.kernel(self.x, xtest)
+
+			if self.loss == "squared":
+				ymean = torch.mm(K_star, self.A)
+			elif self.loss == "huber":
+				ymean = self._huber_fit(K_star)
+			else:
+				raise AssertionError("Loss function not implemented.")
+
+			return ymean
 		else:
-			raise AssertionError("Loss function not implemented.")
-
-		return ymean
-
+			return 0*xtest[:,0].view(-1,1)
 	def gradient_mean_var(self, point, hessian=True):
 		"""
 		Can calculate gradient at single point atm.

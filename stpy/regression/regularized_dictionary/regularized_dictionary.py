@@ -32,8 +32,8 @@ class RegularizedDictionary(Estimator):
                  accuracy: float = 1e-8,  # span check accuracy
                  LR_scaling: float = 1.,  # scaling between signal and noise
                  check: str = None,  # type of check when dealing with likelihood/bias error compensation
-                 bound: float = 1.,
-                 # absolute norm bound on the estimated value, the norm class is specified by the inference type
+                 bound: float = 1., # absolute norm bound on the estimated value, the norm class is specified by the inference type
+                 custom_check: Union[None, callable] = None,  # custom check function
                  tolerance: float = 1e-6,  # tolerance for optimizer
                  delta: float = 0.1):
 
@@ -44,6 +44,7 @@ class RegularizedDictionary(Estimator):
         self.constraints = constraints
         self.use_constraint = use_constraint
         self.check = check
+        self.custom_check = custom_check
         self.m = self.embedding.get_m()
         self.x = None
         self.delta = delta
@@ -108,14 +109,15 @@ class RegularizedDictionary(Estimator):
         for i in range(self.n):
 
             if self.check == "bias":
-                self.evidence.append(self.signal_to_noise_ratio(self.x))
-
+                self.evidence.append(self.signal_to_noise_ratio(self.x[i,:].view(1,-1)))
             elif self.check == "span":
                 self.evidence.append(False)
-
             elif self.check == "none":
                 self.evidence.append(1.)
-
+            elif self.check == "custom":
+                self.evidence.append(self.custom_check(self, self.x[i,:].view(1,-1)))
+            else:
+                self.evidence.append(1.)
             self.estimator_sequence.append(torch.zeros(size=(self.m, 1)).double())
 
     def signal_to_noise_ratio(self, x):
@@ -138,7 +140,7 @@ class RegularizedDictionary(Estimator):
 
         if self.x is not None:
 
-            if self.inference_type == "LR":
+            if self.inference_type == "LR" or self.inference_type == "posterior-prior-LR":
 
                 if self.check == "span":
                     self.evidence.append(self.span_check(x.view(1, -1)))
@@ -146,7 +148,10 @@ class RegularizedDictionary(Estimator):
                     self.evidence.append(self.signal_to_noise_ratio(x.view(1, -1)))
                 elif self.check == "none":
                     self.evidence.append(1.)
-
+                elif self.check == "custom":
+                    self.evidence.append(self.custom_check(self,x.view(1,-1)))
+                else:
+                    self.evidence.append(1.)
             self.x = torch.cat((self.x, x), dim=0)
             self.y = torch.cat((self.y, y), dim=0)
             self.phi = torch.cat((self.phi, self.embed(x)), dim=0)
@@ -180,7 +185,6 @@ class RegularizedDictionary(Estimator):
             if self.regularizer is not None:
                 regularizer = self.regularizer.get_regularizer_cvxpy()
                 objective += regularizer(theta)
-
             constraints = []
             if self.constraints is not None and self.use_constraint:
                 set = self.constraints.get_constraint_cvxpy(theta)
@@ -197,14 +201,14 @@ class RegularizedDictionary(Estimator):
             self.fitted = True
 
             ## TODO: do this with a decorator
-            if self.inference_type == "LR":
+            if self.inference_type == "LR" or self.inference_type =="posterior-prior-LR-weight":
                 self.update_lr_sequence()
         else:
             raise ValueError(
                 "The regularizer or constraint specified are non-convex, use a dedicated class for non-convex estimation.")
 
     def update_lr_sequence(self):
-        if self.inference_type == "LR":
+        if self.inference_type == "LR" or self.inference_type =="posterior-prior-LR-weight":
             self.estimator_sequence.append(self.theta_fit)
 
     def span_check(self, x):
@@ -365,6 +369,8 @@ class RegularizedDictionary(Estimator):
                   'estimator_sequence': self.estimator_sequence
                   }
 
+
+
         if delta is None:
             set = self.likelihood.get_confidence_set_cvxpy(theta, type=self.inference_type,
                                                            params=params, delta=self.delta)
@@ -382,11 +388,16 @@ class RegularizedDictionary(Estimator):
         for j in range(n):
             v.value = sign * Phi[j, :].view(-1, 1).numpy()
             prob.solve(warm_start=True, solver=cp.MOSEK, mosek_params={
-                mosek.iparam.intpnt_solve_form: mosek.solveform.dual,
+                mosek.iparam.intpnt_solve_form: mosek.solveform.primal,
                 mosek.dparam.intpnt_co_tol_pfeas: self.tolerance,
                 mosek.dparam.intpnt_co_tol_dfeas: self.tolerance,
                 mosek.dparam.intpnt_co_tol_rel_gap: self.tolerance}, verbose=False)
             values[j] = prob.value
+        contains_nan = torch.isnan(values).any()
+
+        if contains_nan:
+            raise ValueError("The lcb/ucb contains nan values. Confidence sets cannot be trusted.")
+
         return sign * values
 
     def theta_ml(self):

@@ -48,7 +48,34 @@ class L2Regularizer(Regularizer):
         return self.lam*torch.sum(theta**2)/2.
 
     def hessian(self, theta):
-        return self.lam * torch.eye(n = theta.size()[0]).double()/2.
+        return self.lam * torch.eye(n = theta.size()[0]).double()
+
+class L2DiagRegularizer(L2Regularizer):
+    """
+    L2 regularization with a diagonal matrix
+    """
+    def __init__(self,
+                 Lam=torch.Tensor([[1]]).double(),
+                 d=None):
+        super().__init__()
+        self.Lam = Lam
+        if d is None:
+            d = Lam.size()[0]
+
+
+    def get_regularizer_cvxpy(self):
+        def reg(theta): return cp.quad_form(theta, self.Lam.numpy()) / 2.
+        return reg
+
+
+    def eval(self, theta):
+        v = self.Lam @ theta
+        return  torch.sum((v @ theta).reshape(-1)**2) / 2.
+
+
+    def hessian(self, theta):
+        return self.Lam
+
 
 class NonConvexLqRegularizer(Regularizer):
 

@@ -3,7 +3,7 @@ from typing import Union
 import cvxpy as cp
 import numpy as np
 import mosek
-from stpy.continuous_processes.regularized_dictionary import RegularizedDictionary
+from stpy.regression.regularized_dictionary import RegularizedDictionary
 from stpy.embeddings.embedding import Embedding
 from stpy.probability.likelihood import Likelihood
 

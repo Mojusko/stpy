@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import cvxpy as cp
 
-from stpy.continuous_processes.gauss_procc import GaussianProcess
+from stpy.regression.gauss_procc import GaussianProcess
 from stpy.helpers.helper import interval
 import matplotlib.pyplot as plt
 from stpy.kernels import KernelFunction

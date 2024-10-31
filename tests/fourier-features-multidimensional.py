@@ -1,5 +1,5 @@
 import torch
-from stpy.continuous_processes.fourier_fea import GaussianProcessFF
+from stpy.regression.fourier_fea import GaussianProcessFF
 from stpy.embeddings.embedding import QuadratureEmbedding
 from stpy.helpers.helper import interval
 if __name__ == "__main__":

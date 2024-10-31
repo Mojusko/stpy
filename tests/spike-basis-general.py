@@ -1,4 +1,4 @@
-from stpy.continuous_processes.kernelized_features import KernelizedFeatures
+from stpy.regression.kernelized_features import KernelizedFeatures
 from stpy.embeddings.bump_bases import FaberSchauderEmbedding
 from stpy.helpers.helper import interval
 import torch

@@ -3,7 +3,7 @@ import torch
 
 import stpy
 from stpy.test_functions.swissfel_simulator import FelSimulator
-from stpy.continuous_processes.gauss_procc import GaussianProcess
+from stpy.regression.gauss_procc import GaussianProcess
 
 
 class BenchmarkFunction():
@@ -333,7 +333,7 @@ class GeneralizedAdditiveOverlap(BenchmarkFunction):
 		return self.gamma
 
 
-class p(BenchmarkFunction):
+class SwissFEL(BenchmarkFunction):
 	def __init__(self, **kwargs):
 		super().__init__(**kwargs)
 		self.d = kwargs['d']
@@ -469,6 +469,30 @@ class KernelizedSample(BenchmarkFunction):
 
 	def optimize(self, xtest, sigma, restarts=5):
 		pass
+
+class Simple1DFunctionR(BenchmarkFunction):
+	def __init__(self, **kwargs):
+		super().__init__()
+		self.d = kwargs['d']
+		self.m = kwargs['m']
+		self.gamma = kwargs['gamma']
+		# define Nystrom features on [-1/2,1/2]
+		xtest = torch.linspace(-0.5, 0.5, self.m, dtype=torch.float64).view(-1, 1)
+		from stpy.regression.nystrom_fea import NystromFeatures
+		from stpy.kernels import KernelFunction
+		kernel_object = KernelFunction(gamma = self.gamma)
+		self.GP = NystromFeatures(kernel_object, m = self.m)
+		BenchmarkFunction = Simple1DFunction(d = self.d)
+		y = BenchmarkFunction.eval_noiseless(xtest)
+		self.GP.fit_gp(xtest, y)
+		self.GP.mean_std(xtest)
+		self.B = torch.linalg.norm(self.GP.theta_mean)
+
+	def eval_noiseless(self, X):
+		super().eval_noiseless(X)
+		y = self.GP.mean_std(X)[0]
+		return y
+
 
 
 class Simple1DFunction(BenchmarkFunction):

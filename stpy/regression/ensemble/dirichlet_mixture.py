@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-from stpy.continuous_processes.gauss_procc import GaussianProcess
+from stpy.regression.gauss_procc import GaussianProcess
 from stpy.embeddings.embedding import *
 from stpy.estimator import Estimator
 

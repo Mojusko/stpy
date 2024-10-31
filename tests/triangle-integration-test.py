@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from stpy.continuous_processes.kernelized_features import KernelizedFeatures
+from stpy.regression.kernelized_features import KernelizedFeatures
 from stpy.embeddings.bump_bases import TriangleEmbedding
 from stpy.embeddings.packing_embedding import PackingEmbedding
 from stpy.helpers.helper import interval

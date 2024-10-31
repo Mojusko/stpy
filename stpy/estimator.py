@@ -29,6 +29,7 @@ class Estimator(ABC):
 	def load_data(self,d):
 		self.x = d[0]
 		self.y = d[1]
+		self.fitted = False
 
 	def log_marginal(self, kernel, X, weight):
 		func = kernel.get_kernel()
@@ -611,7 +612,7 @@ class Estimator(ABC):
 
 
 if __name__ == "__main__":
-	from stpy.continuous_processes.kernelized_features import KernelizedFeatures
+	from stpy.regression.kernelized_features import KernelizedFeatures
 	from stpy.kernels import KernelFunction
 	from stpy.embeddings.embedding import HermiteEmbedding
 	import stpy

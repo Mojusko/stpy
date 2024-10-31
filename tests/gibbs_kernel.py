@@ -1,5 +1,5 @@
 from stpy.kernels import KernelFunction
-from stpy.continuous_processes.gauss_procc import  GaussianProcess
+from stpy.regression.gauss_procc import  GaussianProcess
 from stpy.helpers.helper import interval
 from stpy.embeddings.optimal_positive_basis import OptimalPositiveBasis
 import matplotlib.pyplot as plt

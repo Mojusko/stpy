@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from scipy.stats import norm
 
-from stpy.continuous_processes.nystrom_fea import NystromFeatures
+from stpy.regression.nystrom_fea import NystromFeatures
 from stpy.helpers.helper import interval
 from stpy.helpers.helper import sample_qmc_halton
 

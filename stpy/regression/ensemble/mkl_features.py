@@ -2,8 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from stpy.continuous_processes.fourier_fea import GaussianProcessFF
-from stpy.continuous_processes.kernelized_features import KernelizedFeatures
+from stpy.regression.fourier_fea import GaussianProcessFF
+from stpy.regression.kernelized_features import KernelizedFeatures
 from stpy.embeddings.polynomial_embedding import PolynomialEmbedding, CustomEmbedding
 from stpy.estimator import Estimator
 from stpy.test_functions.benchmarks import MultiRKHS

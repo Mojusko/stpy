@@ -1,7 +1,7 @@
 import cvxpy as cp
 import numpy as np
 import torch
-from stpy.continuous_processes.gauss_procc import GaussianProcess
+from stpy.regression.gauss_procc import GaussianProcess
 import matplotlib.pyplot as plt
 
 N = 32

@@ -1,4 +1,4 @@
-from stpy.continuous_processes.kernelized_features import KernelizedFeatures
+from stpy.regression.kernelized_features import KernelizedFeatures
 import torch
 from torchmin import minimize
 from stpy.candidate_set import CandidateDiscreteSet

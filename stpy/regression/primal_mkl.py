@@ -167,8 +167,8 @@ class PrimalMKL(RandomProcess):
 
 
 if __name__ == "__main__":
-	from stpy.continuous_processes.fourier_fea import GaussianProcessFF
-	from stpy.continuous_processes.gauss_procc import GaussianProcess
+	from stpy.regression.fourier_fea import GaussianProcessFF
+	from stpy.regression.gauss_procc import GaussianProcess
 	from stpy.test_functions.benchmarks import MultiRKHS
 
 	n = 1024

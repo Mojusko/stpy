@@ -340,7 +340,7 @@ class BernsteinSplinesEmbedding(PositiveEmbedding):
 
 
 if __name__ == "__main__":
-	from stpy.continuous_processes.gauss_procc import GaussianProcess
+	from stpy.regression.gauss_procc import GaussianProcess
 	from stpy.helpers.helper import interval
 	import matplotlib.pyplot as plt
 	from stpy.kernels import KernelFunction

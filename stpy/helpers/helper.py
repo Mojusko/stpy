@@ -133,7 +133,7 @@ def interval(n, d, L_infinity_ball=1, offset=None):
 
 
 def interval_torch(n, d, L_infinity_ball=1, offset=None):
-	return torch.from_numpy(interval(n, d, L_infinity_ball=L_infinity_ball, offset=offset))
+	return torch.from_numpy(interval(n, d, L_infinity_ball=L_infinity_ball, offset=offset)).double()
 
 
 def get_ecdf(x):

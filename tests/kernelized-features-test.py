@@ -1,4 +1,4 @@
-from stpy.continuous_processes.kernelized_features import KernelizedFeatures
+from stpy.regression.kernelized_features import KernelizedFeatures
 from stpy.embeddings.embedding import HermiteEmbedding
 from stpy.helpers.helper import interval
 import torch

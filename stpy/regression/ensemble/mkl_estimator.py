@@ -2,7 +2,7 @@ import cvxpy as cp
 import numpy as np
 import torch
 
-from stpy.continuous_processes.gauss_procc import GaussianProcess
+from stpy.regression.gauss_procc import GaussianProcess
 from stpy.kernels import KernelFunction
 from stpy.regularization.regularizer import Regularizer
 from stpy.regularization.simplex_regularizer import DirichletRegularizer, SupRegularizer
@@ -170,7 +170,7 @@ class MultipleKernelLearner(GaussianProcess):
 		pass
 
 if __name__ == "__main__":
-	from stpy.continuous_processes.gauss_procc import GaussianProcess
+	from stpy.regression.gauss_procc import GaussianProcess
 	from stpy.helpers.helper import interval_torch
 	import matplotlib.pyplot as plt
 	n = 512

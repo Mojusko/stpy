@@ -81,7 +81,7 @@ class GaussianLikelihood(Likelihood):
                         return cp.sum(theta*0)
         return likelihood
 
-    def information_matrix(self, mask = None):
+    def information_matrix(self, parameter, mask = None):
         if mask is None:
             if self.Sigma is None:
                 V = self.x.T@self.x/(self.sigma**2)
@@ -107,9 +107,9 @@ class GaussianLikelihood(Likelihood):
         H = params['regularizer_hessian']
 
         if H is not None:
-            V = self.information_matrix() + H
+            V = self.information_matrix(theta_fit) + H
         else:
-            V = self.information_matrix()
+            V = self.information_matrix(theta_fit)
 
         if type in ["none", None, "fixed"]:
 #            L = torch.linalg.cholesky(V).double()
@@ -138,6 +138,12 @@ class GaussianLikelihood(Likelihood):
             params["sigma"] = self.sigma
             beta = self.confidence_parameter_prior_posterior(delta, params)
             set = self.prior_posterior_lr_confidence_set_cvxpy(theta, beta, params)
+
+        elif type == "posterior-prior-LR-weight":
+            params["sigma"] = self.sigma
+            beta = self.confidence_parameter_prior_posterior_weighted(delta, params)
+            set = self.prior_posterior_lr_confidence_set_cvxpy_weighted(theta, beta, params)
+
         else:
             raise NotImplementedError("The desired confidence set type is not supported.")
         print (type, "USING BETA: ", beta)

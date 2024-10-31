@@ -3,7 +3,7 @@ import numpy as np
 import scipy
 import torch
 
-from stpy.continuous_processes.gauss_procc import GaussianProcess
+from stpy.regression.gauss_procc import GaussianProcess
 
 
 class CategoricalMixture(GaussianProcess):

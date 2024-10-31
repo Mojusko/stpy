@@ -3,7 +3,7 @@ import pickle
 from h5py import File
 
 import stpy
-import stpy.continuous_processes.gauss_procc
+import stpy.regression.gauss_procc
 # from tensorflow.examples.tutorials.mnist import input_data
 from stpy.helpers.helper import *
 from stpy.test_functions.neural_net import train_network
@@ -75,7 +75,7 @@ class test_function:
 		if self.sampled == False:
 			# print ("sampling")
 			if GP == None:
-				GP = stpy.continuous_processes.gauss_procc.GaussianProcess(s=sigma, gamma=gamma)
+				GP = stpy.regression.gauss_procc.GaussianProcess(s=sigma, gamma=gamma)
 				self.sample = GP.sample(torch.from_numpy(self.xtest)).numpy()
 				mask = isin(self.xtest, X)
 				self.sampled = True
@@ -108,7 +108,7 @@ class test_function:
 		(n, d) = xtest.size()
 		kernel = stpy.kernels.KernelFunction(kernel_name="ard", gamma=torch.ones(d, dtype=torch.float64) * 0.1,
 											 groups=groups)
-		GP = stpy.continuous_processes.gauss_procc.GaussianProcess(kernel_custom=kernel, s=s, d=d)
+		GP = stpy.regression.gauss_procc.GaussianProcess(kernel_custom=kernel, s=s, d=d)
 		GP.fit_gp(xtest, ytest)
 		GP.optimize_params(type="bandwidth")
 		print("Optimized")

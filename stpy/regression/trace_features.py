@@ -2,7 +2,7 @@ import cvxpy as cp
 import numpy as np
 import torch
 
-from stpy.continuous_processes.kernelized_features import KernelizedFeatures
+from stpy.regression.kernelized_features import KernelizedFeatures
 
 
 class TraceFeatures(KernelizedFeatures):

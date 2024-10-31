@@ -5,7 +5,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
-from stpy.continuous_processes.regularized_dictionary import RegularizedDictionary
+from stpy.regression.regularized_dictionary import RegularizedDictionary
 from stpy.embeddings.embedding import ConcatEmbedding
 from stpy.embeddings.bump_bases import TriangleEmbedding
 from stpy.probability.gaussian_likelihood import GaussianLikelihood

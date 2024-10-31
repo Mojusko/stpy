@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import torch
 
-from stpy.continuous_processes.nystrom_fea import NystromFeatures
+from stpy.regression.nystrom_fea import NystromFeatures
 from stpy.embeddings.embedding import Embedding
 from stpy.helpers.helper import interval, batch_jacobian, batch_hessian
 from stpy.helpers.helper import interval_torch
@@ -69,7 +69,7 @@ class PackingEmbedding(Embedding):
 
 
 if __name__ == "__main__":
-	from stpy.continuous_processes.kernelized_features import KernelizedFeatures
+	from stpy.regression.kernelized_features import KernelizedFeatures
 
 	d = 1
 	m = 200

@@ -1,4 +1,4 @@
-from stpy.continuous_processes.fourier_fea import GaussianProcessFF
+from stpy.regression.fourier_fea import GaussianProcessFF
 from stpy.test_functions.benchmarks import *
 from doexpy.bandits.OPPR_TS_GP import OPPR_TS_GP
 

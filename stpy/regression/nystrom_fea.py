@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import LinearNDInterpolator
 from scipy.interpolate import interp1d
 
-from stpy.continuous_processes.gauss_procc import GaussianProcess
+from stpy.regression.gauss_procc import GaussianProcess
 from stpy.embeddings.embedding import *
 from stpy.helpers.helper import *
 from stpy.kernels import KernelFunction
@@ -51,7 +51,7 @@ class NystromFeatures(Embedding):
 
 	def leverage_score_subsampling(self, x, y):
 		N = x.size()[0]
-		from stpy.continuous_processes.gauss_procc import GaussianProcess
+		from stpy.regression.gauss_procc import GaussianProcess
 		GP = GaussianProcess(kernel_custom=self.kernel_object, s=self.s)
 		GP.fit_gp(x, y)
 		mean, leverage_scores = GP.mean_std(x)
@@ -78,7 +78,7 @@ class NystromFeatures(Embedding):
 	def sequential_leverage_score_subsampling(self, x, y):
 		N = x.size()[0]
 		d = x.size()[1]
-		from stpy.continuous_processes.gauss_procc import GaussianProcess
+		from stpy.regression.gauss_procc import GaussianProcess
 		GP = GaussianProcess(kernel_custom=self.kernel_object, s=self.s)
 
 		dts = torch.zeros(self.ms, d, dtype=torch.float64)
@@ -103,7 +103,7 @@ class NystromFeatures(Embedding):
 					pass
 		return (args, weights)
 
-	def fit_gp(self, x, y, eps=1e-14):
+	def fit_gp(self, x, y, eps=1e-14, explained_variance = 0.95):
 		'''
 			Function to Fit GP
 		'''
@@ -113,7 +113,7 @@ class NystromFeatures(Embedding):
 		self.d = x.size()[1]
 		self.N = x.size()[0]
 
-		assert (self.ms <= self.N)
+		assert (self.ms <= self.N if self.ms is not None else False or self.approx == "svd-explained")
 		self.linear_kernel = KernelFunction(kernel_name="linear").linear_kernel
 
 		if self.approx == "svd":
@@ -132,6 +132,28 @@ class NystromFeatures(Embedding):
 			# Dinv = torch.diag(1./D[self.N-self.ms:self.N])
 			# Dinv[Dinv <=0 ] = 0
 			# Dinv = torch.sqrt(Dinv)
+			self.eigs = D
+			Dinv = torch.diag(torch.sqrt(1. / D))
+			# self.M = (torch.t(V)[self.N-self.ms:self.N,:]).T @ Dinv.T
+			self.M = V @ Dinv
+			# self.embed = lambda q: torch.t(torch.mm(Dinv, torch.mm(torch.t(V)[self.N-self.ms:self.N,:], self.kernel(q, self.x)   )))
+			self.embed = lambda q: self.kernel(q, self.xs).T @ self.M
+			self.C = []
+		elif self.approx == 'svd-explained':
+			self.xs = x
+			K = self.kernel(x, x)
+
+			(D, V) = torch.linalg.eigh(K, UPLO='U')
+
+			#normalize D
+			nD = D / torch.sum(D)
+			# cumsum
+			cD = torch.cumsum(torch.flip(nD, dims=[0]), dim=0)
+			# find the first index where the sum is greater than delta
+			self.ms = torch.sum(cD < explained_variance)
+			V = torch.t(V)[self.N - self.ms:self.N, :].T
+			D = D[self.N - self.ms:self.N]
+			D[D <= eps] = 0
 			self.eigs = D
 			Dinv = torch.diag(torch.sqrt(1. / D))
 			# self.M = (torch.t(V)[self.N-self.ms:self.N,:]).T @ Dinv.T
@@ -217,9 +239,9 @@ class NystromFeatures(Embedding):
 		else:
 			embeding = self.embed(xtest)
 			Q = self.embed(self.x)
-			theta_mean, _ = torch.solve(torch.mm(torch.t(Q), self.y), self.K)
-			ymean = torch.mm(embeding, theta_mean)
-			temp = torch.t(torch.solve(torch.t(embeding), self.K)[0])
+			self.theta_mean = torch.linalg.solve(self.K, torch.mm(torch.t(Q), self.y))
+			ymean = torch.mm(embeding, self.theta_mean)
+			temp = torch.t(torch.linalg.solve(self.K,torch.t(embeding)))
 			diagonal = self.s * self.s * torch.einsum('ij,ji->i', (temp, torch.t(embeding))).view(-1, 1)
 			yvar = torch.sqrt(diagonal)
 

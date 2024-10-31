@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 from stpy.embeddings.embedding import HermiteEmbedding, RFFEmbedding, ConcatEmbedding, MaskedEmbedding
 from stpy.kernels import KernelFunction
 from stpy.helpers.helper import interval, interval_torch
-from stpy.continuous_processes.regularized_dictionary import RegularizedDictionary
-from stpy.continuous_processes.nystrom_fea import NystromFeatures
+from stpy.regression.regularized_dictionary import RegularizedDictionary
+from stpy.regression.nystrom_fea import NystromFeatures
 from stpy.probability.gaussian_likelihood import GaussianLikelihood
-from stpy.continuous_processes.regularized_dictionary_psd import RegularizedDictionaryPSD
+from stpy.regression.regularized_dictionary_psd import RegularizedDictionaryPSD
 from stpy.regularization.sdp_constraint import SDPConstraint
 
 if __name__ == "__main__":
