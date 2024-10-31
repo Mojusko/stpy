@@ -57,7 +57,7 @@ class FelSimulator():
 		self.GP.s = self.s
 		self.GP.fit(self.x, self.y)
 		print("Model fitted.")
-		self.GP.optimize_params(type=optimize, restarts=restarts)
+		self.GP.optimize_params(type=optimize, restarts=restarts, optimizer="pytorch-minimize")
 		self.GP.back_prop = True
 
 	def bounds(self, N, n):

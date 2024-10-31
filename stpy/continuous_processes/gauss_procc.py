@@ -104,6 +104,8 @@ class GaussianProcess(Estimator):
 			self.y = torch.cat((self.y, y), dim=0)
 			if Sigma is None:
 				self.Sigma = torch.block_diag(self.Sigma, torch.eye(x.size()[0],dtype = torch.double) * self.s)
+			else:
+				self.Sigma = torch.block_diag(self.Sigma, Sigma)
 		else:
 			self.x = x
 			self.y = y
@@ -114,7 +116,7 @@ class GaussianProcess(Estimator):
 		if x is not None:
 			self.fit_gp(x,y)
 		else:
-			self.fit_gp(self.x,self.y)
+			self.fit_gp(self.x,self.y, Sigma=self.Sigma)
 
 	def lcb(self, xtest):
 		"""
