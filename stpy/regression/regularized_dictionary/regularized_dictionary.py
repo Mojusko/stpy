@@ -10,7 +10,7 @@ from stpy.estimator import Estimator
 from stpy.regularization.constraints import Constraints
 from stpy.probability.likelihood import Likelihood
 from stpy.regularization.regularizer import L2Regularizer, Regularizer
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 
 
 class RegularizedDictionary(Estimator):
@@ -66,7 +66,7 @@ class RegularizedDictionary(Estimator):
         self.evidence = []
         self.estimator_sequence = []
         self.vovk_estimator_sequence = []
-
+        self.weights = None
     def description(self):
         return "regularized dictionary object"
 
@@ -91,7 +91,9 @@ class RegularizedDictionary(Estimator):
     def set_effectitve_dimension(self, xtest):
         self.d_eff = self.effective_dimension(xtest)
 
-    def load_data(self, data: Union[Tuple, List]):
+    def load_data(self,
+                  data: Union[Tuple, List],
+                  weights: Union[None, torch.Tensor] = None):
         """
 
         :param data:
@@ -99,6 +101,7 @@ class RegularizedDictionary(Estimator):
         """
         x, y = data
         self.phi = self.embed(x)
+        self.weights = weights
         self.x = x
         self.y = y
         self.n = list(self.x.size())[0]
@@ -110,6 +113,8 @@ class RegularizedDictionary(Estimator):
 
             if self.check == "bias":
                 self.evidence.append(self.signal_to_noise_ratio(self.x[i,:].view(1,-1)))
+            elif self.check == "optimal":
+                self.evidence.append(self.signal_to_noise_ratio_opt(self.x[i, :].view(1, -1)))
             elif self.check == "span":
                 self.evidence.append(False)
             elif self.check == "none":
@@ -120,6 +125,54 @@ class RegularizedDictionary(Estimator):
                 self.evidence.append(1.)
             self.estimator_sequence.append(torch.zeros(size=(self.m, 1)).double())
 
+    def signal_to_noise_ratio_opt(self, x):
+        new_omega = 0
+        from scipy.optimize import minimize_scalar
+        if not self.likelihood.fitted:
+            return 1.
+        #Regret = self.bound/self.likelihood.scale(bound=self.bound)*self.likelihood.x.size()[0]
+        params = {'estimate': self.theta_fit,
+                  'regularizer_hessian': self.regularizer.hessian(self.theta_fit),
+                  'd_eff': self.d_eff if self.d_eff is not None else self.m,
+                  'bound': self.bound,
+                  'kernel_object': KernelFunction(d=self.d, kernel_function=lambda x, y, kappa, group: x.T @ y),
+                  'evidence': self.evidence,
+                  'estimator_sequence': self.estimator_sequence
+                  }
+        Regret = self.likelihood.confidence_parameter_likelihood_ratio(0.1, params=params)
+
+        def optimal_fn(omega, special=False):
+            phi = self.embed(x)
+            V_t = self.likelihood.information_matrix(self.theta_fit) + self.regularizer.hessian(self.theta_fit)
+            v = phi @ torch.linalg.pinv(V_t) @ phi.T
+            denom = 1. + omega * v/self.likelihood.scale(bound=self.bound)
+            invV_t = torch.linalg.pinv(V_t)
+            b = Regret/denom + (omega/self.likelihood.scale(bound=self.bound))*torch.trace(invV_t @ phi.T @ phi @ invV_t)/ (denom)
+            return b
+
+        N = 1000
+        omegas = np.logspace(-20,0,N, base = 2)
+        vals = []
+        valsa = []
+        valsb = []
+        for omega in omegas:
+            vals.append(optimal_fn(omega))
+            #valsa.append(optimal_fn(omega, special=True)[0])
+            #valsb.append(optimal_fn(omega, special=True)[1])
+
+        import matplotlib.pyplot as plt
+        bias = self.bias(x)
+        SNR = self.likelihood.scale(err=bias, bound=self.bound) * self.LR_scaling / (
+            self.likelihood.scale(err=bias, bound=self.bound) * self.LR_scaling + self.bias(x))
+        plt.semilogx(omegas,vals)
+        # plt.plot(omegas,valsa,  linestyle="--")
+        # plt.plot(omegas,valsb, linestyle="--")
+        plt.semilogx([SNR for _ in range(N)],vals)
+
+        plt.show()
+        result = minimize_scalar(optimal_fn, bounds=(0, 1), method='bounded')
+
+        return float(result.x)
     def signal_to_noise_ratio(self, x):
         bias = self.bias(x)
         print("bias", bias)
@@ -146,6 +199,8 @@ class RegularizedDictionary(Estimator):
                     self.evidence.append(self.span_check(x.view(1, -1)))
                 elif self.check == "bias":
                     self.evidence.append(self.signal_to_noise_ratio(x.view(1, -1)))
+                elif self.check == "optimal":
+                    self.evidence.append(self.signal_to_noise_ratio_opt(x.view(1, -1)))
                 elif self.check == "none":
                     self.evidence.append(1.)
                 elif self.check == "custom":
@@ -166,7 +221,7 @@ class RegularizedDictionary(Estimator):
 
     def fit(self):
         data = (self.phi, self.y)
-        self.likelihood.load_data(data)
+        self.likelihood.load_data(data, weights = self.weights)
         self.calculate()
 
     def calculate(self):

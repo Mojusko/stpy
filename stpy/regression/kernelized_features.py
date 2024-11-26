@@ -6,7 +6,7 @@ from scipy.optimize import minimize
 from torch.autograd import grad
 
 from stpy.regression.gauss_procc import GaussianProcess
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 
 
 class KernelizedFeatures(GaussianProcess):

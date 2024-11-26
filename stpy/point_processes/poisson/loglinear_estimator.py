@@ -5,7 +5,7 @@ import numpy as np
 import torch
 
 from stpy.borel_set import BorelSet, HierarchicalBorelSets
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 from stpy.point_processes.poisson import PoissonPointProcess
 from stpy.point_processes.poisson_rate_estimator import PoissonRateEstimator
 

@@ -2,10 +2,13 @@ from stpy.regularization.regularizer import Regularizer
 from stpy.regularization.constraints import Constraints
 import cvxpy as cp
 from typing import Union
+import torch
 
 class SDPConstraint(Constraints):
 
-    def __init__(self, type="trace", rank=1.,
+    def __init__(self,
+                 type="trace",
+                 rank=1.,
                  trace_constraint = None,
                  matrix_bound = None,
                  lambda_max_constraint = None,
@@ -34,6 +37,15 @@ class SDPConstraint(Constraints):
         if self.type == "stable-rank":
             self.matrix_bound = self.rank
 
+    def eval(self, Gamma):
+        if self.type == "trace":
+            return torch.trace(Gamma)*self.trace_constraint
+        elif self.type == "lambda_max":
+            return torch.lambda_max(Gamma) * self.lambda_max_constraint
+        elif self.type == "stable-rank":
+            return torch.norm(Gamma, "nuc")
+        elif self.type == "custom":
+            return self.custom_regularization(Gamma)
     def get_type(self):
         return self.type
 

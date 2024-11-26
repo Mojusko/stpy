@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from stpy.embeddings.embedding import HermiteEmbedding
 from stpy.point_processes.poisson import PoissonPointProcess
 from stpy.borel_set import BorelSet, HierarchicalBorelSets
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 import cvxpy as cp
 import torch
 import numpy as np

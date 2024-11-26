@@ -1,11 +1,11 @@
 import matplotlib.pyplot as plt
 import torch
 
-from stpy.regression.nystrom_fea import NystromFeatures
+from stpy.embeddings.nystrom_fea import NystromFeatures
 from stpy.embeddings.embedding import Embedding
 from stpy.helpers.helper import interval, batch_jacobian, batch_hessian
 from stpy.helpers.helper import interval_torch
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 
 
 class PackingEmbedding(Embedding):

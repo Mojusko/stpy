@@ -11,47 +11,87 @@ class Likelihood(ABC):
 
     @abstractmethod
     def evaluate_log(self, f):
+        """Evaluate log-probability of a specific value f"""
         pass
 
     @abstractmethod
     def scale(self, err = None, bound = None):
+        """ Return the inverse of strong-convexity parameter of the likelihood"""
         return
 
     @abstractmethod
     def normalization(self, d):
+        """
+        Return the normalization constant of the likelihood
+        :param d:
+        :return:
+        """
         return
 
     @abstractmethod
     def evaluate_datapoint(self, f, d, mask = None):
+        """
+        Evaluate the likelihood of a specific data point
+        :param f: prediction
+        :param d: data
+        :param mask: weighting of the data
+        :return:
+        """
         pass
 
     @abstractmethod
     def get_confidence_set_cvxpy(self, theta, type, params, delta):
+        """
+        Return the cvxpy set constraint
+        :param theta:
+        :param type:
+        :param params:
+        :param delta:
+        :return:
+        """
         pass
 
     @abstractmethod
     def information_matrix(self, theta_fit):
+        """
+        Get an information matrix
+        :param theta_fit:
+        :return:
+        """
         pass
 
 
     @abstractmethod
     def get_objective_cvxpy(self, mask = None):
+        """
+        Return the cvxpy objective of the negative log-likelihood
+        :param mask:
+        :return:
+        """
         pass
 
     @abstractmethod
     def get_objective_torch(self):
+        """
+        Return the torch objective of the negative log-likelihood
+        :return:
+        """
         pass
 
 
-    def add_data_point(self, d):
+    def add_data_point(self, d, weight = None):
         x,y = d
         self.x = torch.vstack(self.x,x)
         self.y = torch.vstack(self.y,y)
+        if weight is None and self.weights is not None:
+            self.weights = torch.vstack(self.weights, torch.ones(weight))
         self.fitted = False
 
-    def load_data(self, D):
+    def load_data(self, D, weights = None):
         self.x, self.y = D
+        self.weights = weights
         self.fitted = False
+
 
     def confidence_parameter_likelihood_ratio(self, delta, params):
         """
@@ -116,28 +156,6 @@ class Likelihood(ABC):
 
         evidence_of_the_data = -0.5*y.T@torch.linalg.solve(K,y)-0.5*torch.linalg.slogdet(2*np.pi*K)[1] ## last terms come from the other
         return np.log(1./delta) - evidence_of_the_data
-
-        #est = estimators[-1]
-        #invV = torch.inverse(V)
-        # for i in range(len(estimators)-1):
-        #     xx = x[i,:].view(1,-1)*np.sqrt(ev[i])
-        #     yy = y[i,:].view(1,-1)*np.sqrt(ev[i])
-        #     V = (self.x[:i-1,:].T @ self.x[:i-1,:] / (sigma ** 2) + torch.max(H) * torch.eye(d))
-        #     invV = torch.inverse(V)
-        #     est = estimators[i]
-        #     #val = self.evaluate_datapoint(est, (xx, yy), mask=1)
-        #     val = (xx@est - yy)**2
-        #     print ("i", i, ":",val)
-        #     posterior_variance = xx@invV@xx.T + sigma**2
-        #     #evidence_of_the_data += ev[i]*(-0.5*np.log(2*np.pi) - 0.5 *xx@invV@xx.T*sigma**2 - val)#-0.5*np.log(2*np.pi*sigma**2))
-        #
-        #     evidence_of_the_data+=ev[i]*(-0.5*np.log(2*np.pi*posterior_variance) - val/(2*posterior_variance) + 0.5*np.log(2*np.pi*sigma**2))
-        #     print ("log, DELTA:", np.log(1/delta))
-        #     print ( 0.5*np.log(2*np.pi*sigma**2))
-        #     print (0.5*np.log(2*np.pi*posterior_variance))
-        #     print (val/(2*posterior_variance))
-        #return np.log(1./delta) - evidence_of_the_data
-
     def prior_posterior_lr_confidence_set_cvxpy_weighted(self, theta, beta, params):
         """
         Return the cvxpy set constraint

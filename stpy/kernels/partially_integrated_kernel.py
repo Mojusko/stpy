@@ -1,7 +1,7 @@
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 from stpy.borel_set import BorelSet
 from stpy.helpers.helper import cartesian
-from stpy.regression.nystrom_fea import NystromFeatures
+from stpy.embeddings.nystrom_fea import NystromFeatures
 import torch
 class IntegratedKernel(KernelFunction):
 

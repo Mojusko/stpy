@@ -12,7 +12,7 @@ from stpy.helpers.ellipsoid_algorithms import maximize_quadratic_on_ellipse, min
 from stpy.point_processes.poisson import PoissonPointProcess
 from stpy.point_processes.poisson_rate_estimator import PositiveRateEstimator
 from stpy.borel_set import BorelSet, HierarchicalBorelSets
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 
 class LogLinearRateEstimator(PositiveRateEstimator):
 

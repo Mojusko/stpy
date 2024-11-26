@@ -48,9 +48,9 @@ from scipy.stats import norm
 
 import stpy.helpers.helper as helper
 import stpy.helpers.quadrature_helper as quad_help
+from stpy.embeddings.embedding_base import EmbeddingBase
 
-
-class Embedding():
+class Embedding(EmbeddingBase):
 	"""
 	Base class for Embeddings to approximate kernels with a higher dimensional linear product.
 	"""
@@ -110,11 +110,6 @@ class Embedding():
 		raise AttributeError("Only derived classes can call this method.")
 
 	def get_m(self):
-		"""
-
-		:return:
-
-		"""
 		return self.m
 
 	def integral(self, S):

@@ -5,9 +5,9 @@ import scipy
 import torch
 
 from stpy.borel_set import BorelSet
-from stpy.regression.nystrom_fea import NystromFeatures
+from stpy.embeddings.nystrom_fea import NystromFeatures
 from stpy.embeddings.positive_embedding import PositiveEmbedding
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 
 
 class OptimalPositiveBasis(PositiveEmbedding):

@@ -12,7 +12,7 @@ from torchmin import minimize as minimize_torch
 
 import stpy.helpers.helper as helper
 from stpy.estimator import Estimator
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 
 
 class GaussianProcess(Estimator):

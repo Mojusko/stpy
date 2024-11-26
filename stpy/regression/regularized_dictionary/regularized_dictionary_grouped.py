@@ -11,7 +11,7 @@ from stpy.embeddings.bump_bases import TriangleEmbedding
 from stpy.probability.gaussian_likelihood import GaussianLikelihood
 from stpy.regularization.regularizer import NestedGroupL1L2Regularizer
 from stpy.helpers.helper import interval_torch
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 
 class GroupedRegularizedDictionary(RegularizedDictionary):
 

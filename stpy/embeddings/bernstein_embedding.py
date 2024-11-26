@@ -343,7 +343,7 @@ if __name__ == "__main__":
 	from stpy.regression.gauss_procc import GaussianProcess
 	from stpy.helpers.helper import interval
 	import matplotlib.pyplot as plt
-	from stpy.kernels import KernelFunction
+	from stpy.kernel import KernelFunction
 	from stpy.embeddings.bump_bases import FaberSchauderEmbedding
 
 	d = 1

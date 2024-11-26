@@ -13,7 +13,7 @@ from stpy.helpers.ellipsoid_algorithms import maximize_matrix_quadratic_on_ellip
 from stpy.point_processes.poisson import PoissonPointProcess
 from stpy.point_processes.poisson_rate_estimator import PositiveRateEstimator
 from stpy.borel_set import BorelSet, HierarchicalBorelSets
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 
 ## implement loading data
 

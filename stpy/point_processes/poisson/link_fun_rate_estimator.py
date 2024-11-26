@@ -10,7 +10,7 @@ from stpy.embeddings.embedding import HermiteEmbedding
 from stpy.helpers.ellipsoid_algorithms import maximize_matrix_quadratic_on_ellipse, minimize_matrix_quadratic_on_ellipse
 from stpy.helpers.ellipsoid_algorithms import maximize_quadratic_on_ellipse, minimize_quadratic_on_ellipse
 from stpy.helpers.quadrature_helper import quadvec2
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 from stpy.point_processes.poisson import PoissonPointProcess
 from stpy.point_processes.poisson_rate_estimator import PoissonRateEstimator
 

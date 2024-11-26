@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 from stpy.regression.gauss_procc import GaussianProcess
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 from stpy.regularization.regularizer import Regularizer
 from stpy.regularization.simplex_regularizer import DirichletRegularizer, SupRegularizer
 

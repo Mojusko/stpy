@@ -25,6 +25,7 @@ class HuberLikelihood(GaussianLikelihood):
     def evaluate_datapoint(self, theta, d, mask = None):
         if mask is None:
             mask = 1.
+
         x, y = d
         res = (x @ theta - y) / self.sigma
         mask1 = torch.abs(res) < self.M

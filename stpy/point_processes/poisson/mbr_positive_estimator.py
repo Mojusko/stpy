@@ -6,7 +6,7 @@ import torch
 
 from stpy.borel_set import BorelSet, HierarchicalBorelSets
 from stpy.embeddings.embedding import HermiteEmbedding
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 from stpy.point_processes.poisson import PoissonPointProcess
 from stpy.point_processes.poisson.link_fun_rate_estimator import PermanentalProcessRateEstimator
 

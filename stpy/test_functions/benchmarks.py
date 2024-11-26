@@ -478,8 +478,8 @@ class Simple1DFunctionR(BenchmarkFunction):
 		self.gamma = kwargs['gamma']
 		# define Nystrom features on [-1/2,1/2]
 		xtest = torch.linspace(-0.5, 0.5, self.m, dtype=torch.float64).view(-1, 1)
-		from stpy.regression.nystrom_fea import NystromFeatures
-		from stpy.kernels import KernelFunction
+		from stpy.embeddings.nystrom_fea import NystromFeatures
+		from stpy.kernel import KernelFunction
 		kernel_object = KernelFunction(gamma = self.gamma)
 		self.GP = NystromFeatures(kernel_object, m = self.m)
 		BenchmarkFunction = Simple1DFunction(d = self.d)

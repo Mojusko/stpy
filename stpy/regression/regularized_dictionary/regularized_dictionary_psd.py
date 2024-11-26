@@ -11,7 +11,7 @@ from stpy.embeddings.embedding import Embedding
 from stpy.probability.likelihood import Likelihood
 from stpy.optim.custom_optimizers import bisection
 from stpy.regularization.sdp_constraint import SDPConstraint
-from stpy.regression.nystrom_fea import NystromFeatures
+from stpy.embeddings.nystrom_fea import NystromFeatures
 
 
 class RegularizedDictionaryPSD(RegularizedDictionary):

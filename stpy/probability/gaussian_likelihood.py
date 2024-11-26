@@ -25,18 +25,8 @@ class GaussianLikelihood(Likelihood):
             res = ((f - self.y).T @ torch.inverse(2*self.Sigma.T@self.Sigma)  @ (f - self.y) )
         return res
 
-    def load_data(self, D):
-        self.x, self.y = D
-        self.fitted = False
-
-    def add_data_point(self, d):
-        x,y = d
-        self.x = torch.vstack(self.x,x)
-        self.y = torch.vstack(self.y,y)
-        self.fitted = False
-
     def evaluate_datapoint(self, theta, d, mask = None):
-        x,y = d
+        x, y = d
         if mask is None:
             mask = 1.
 
@@ -50,21 +40,32 @@ class GaussianLikelihood(Likelihood):
         return 1./np.sqrt(2.*np.pi*self.sigma**2)
 
     def get_objective_torch(self):
+        if self.weights is None:
+            weights = torch.ones(self.x.size()[0])
+        else:
+            weights = self.weights
 
         if self.Sigma is None:
-            def likelihood(theta): return torch.sum((self.x@theta - self.y)**2)/(2*self.sigma**2)
-
+            def likelihood(theta): return torch.sum(weights*(self.x@theta - self.y)**2)/(2*self.sigma**2)
         else:
-            def likelihood(theta): return (self.x@theta - self.y).T@torch.linalg.inv(self.Sigma.T@self.Sigma*2)@(self.x@theta - self.y)
+            def likelihood(theta): return (self.x@theta - self.y).T@torch.diag(weights)@torch.linalg.inv(self.Sigma.T@self.Sigma*2)@(self.x@theta - self.y)
         return likelihood
 
     def get_objective_cvxpy(self, mask = None):
+        if self.weights is None:
+            weights = torch.ones(self.x.size()[0]).view(-1,1)
+        elif mask is not None:
+            mask = self.weights * mask
+        else:
+            weights = self.weights
+
+        print (self.x.size(),self.y.size(),weights.size())
         if mask is None:
             if self.Sigma is None:
-                def likelihood(theta): return cp.sum(cp.square(self.x@theta - self.y))/(2*self.sigma**2)
+                def likelihood(theta): return cp.sum(cp.multiply(weights,cp.square(self.x@theta - self.y)))/(2*self.sigma**2)
 
             else:
-                def likelihood(theta): return cp.matrix_frac(self.x@theta - self.y,2*self.Sigma.T@self.Sigma)
+                def likelihood(theta): return cp.matrix_frac(torch.diag(weights)@(self.x@theta - self.y),2*self.Sigma.T@self.Sigma)
         else:
             if self.Sigma is None:
                 def likelihood(theta):
@@ -72,7 +73,6 @@ class GaussianLikelihood(Likelihood):
                         return cp.sum_squares(cp.multiply(mask.double().view(-1,1),(self.x @ theta - self.y)) )/ (2*self.sigma ** 2)
                     else:
                         return cp.sum(theta*0)
-
             else:
                 def likelihood(theta):
                     if torch.sum(mask.int())>1e-8:
@@ -82,11 +82,19 @@ class GaussianLikelihood(Likelihood):
         return likelihood
 
     def information_matrix(self, parameter, mask = None):
+
+        if self.weights is None:
+            weights = torch.ones(self.x.size()[0])
+        elif mask is not None:
+            mask = self.weights * mask
+        else:
+            weights = self.weights
+
         if mask is None:
             if self.Sigma is None:
-                V = self.x.T@self.x/(self.sigma**2)
+                V = self.x.T@np.diag(weights)@self.x/(self.sigma**2)
             else:
-                V = self.x.T@torch.linalg.inv(self.Sigma.T@self.Sigma)@self.x
+                V = self.x.T@np.diag(weights)@torch.linalg.inv(self.Sigma.T@self.Sigma)@self.x
             return V
         else:
             if self.Sigma is None:

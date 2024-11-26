@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from stpy.kernel_functions.kernel_params import KernelParams
+from stpy.kernels.kernel_functions.kernel_params import KernelParams
 
 def squared_exponential_kernel(a, b, **kwargs):
 	"""

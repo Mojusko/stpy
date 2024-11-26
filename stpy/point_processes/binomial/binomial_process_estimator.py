@@ -7,7 +7,7 @@ from quadprog import solve_qp
 
 from stpy.borel_set import HierarchicalBorelSets
 from stpy.embeddings.bump_bases import TriangleEmbedding
-from stpy.kernels import KernelFunction
+from stpy.kernel import KernelFunction
 from stpy.point_processes.rate_estimator import RateEstimator
 
 

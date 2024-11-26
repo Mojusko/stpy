@@ -1,17 +1,12 @@
 import pickle
-from abc import ABC
-import numpy as np
-import torch
-import matplotlib.pyplot as plt
 import pymanopt
 from autograd_minimize import minimize
 from pymanopt.manifolds import Product
 from pymanopt.optimizers import SteepestDescent
 from torchmin import minimize as minimize_torch
 from abc import ABC, abstractmethod
-from stpy.helpers import helper
 from stpy.optim.custom_optimizers import bisection
-
+import matplotlib.pyplot as plt
 class Estimator(ABC):
 
 	def fit(self):
@@ -42,7 +37,7 @@ class Estimator(ABC):
 		return logprob
 
 	def optimize_params_general(self, params={}, restarts=2,
-								optimizer="pymanopt", maxiter=1000,
+								optimizer="pytorch-minimize", maxiter=1000,
 								mingradnorm=1e-4, regularizer_func=None,
 								verbose=False, scale=1., weight=1., save = False,
 								save_name = 'model.np', parallel = False, cores = None):
@@ -613,7 +608,7 @@ class Estimator(ABC):
 
 if __name__ == "__main__":
 	from stpy.regression.kernelized_features import KernelizedFeatures
-	from stpy.kernels import KernelFunction
+	from stpy.kernel import KernelFunction
 	from stpy.embeddings.embedding import HermiteEmbedding
 	import stpy
 	import torch

@@ -1,5 +1,5 @@
-
-class KernelParams():
+from abc import ABC, abstractmethod
+class KernelParams(ABC):
 
 	def __init__(self, param_dict):
 		for key in param_dict:
