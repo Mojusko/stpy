@@ -233,6 +233,7 @@ class RegularizedDictionary(Estimator):
 
         elif (self.regularizer is None or self.regularizer.is_convex()) and (
                 self.constraints is None or self.constraints.is_convex()):
+            
             theta = cp.Variable((self.m, 1))
             likelihood = self.likelihood.get_objective_cvxpy()
             objective = likelihood(theta)
@@ -240,6 +241,7 @@ class RegularizedDictionary(Estimator):
             if self.regularizer is not None:
                 regularizer = self.regularizer.get_regularizer_cvxpy()
                 objective += regularizer(theta)
+                
             constraints = []
             if self.constraints is not None and self.use_constraint:
                 set = self.constraints.get_constraint_cvxpy(theta)
@@ -251,7 +253,7 @@ class RegularizedDictionary(Estimator):
                 mosek.dparam.intpnt_co_tol_pfeas: self.tolerance,
                 mosek.dparam.intpnt_co_tol_dfeas: self.tolerance,
                 mosek.dparam.intpnt_co_tol_rel_gap: self.tolerance}, verbose=False)
-
+            
             self.theta_fit = torch.from_numpy(theta.value)
             self.fitted = True
 

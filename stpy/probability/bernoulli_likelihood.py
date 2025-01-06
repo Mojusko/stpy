@@ -22,7 +22,7 @@ class BernoulliLikelihoodCanonical(GaussianLikelihood):
     def link(self, s):
         return 1./(1.+ torch.exp(-s))
 
-    def scale(self, mask = None):
+    def scale(self, err= None, bound = None, mask = None):
         return 1.
 
     def get_objective_cvxpy(self, mask = None):

@@ -4,35 +4,70 @@ from stpy.regularization.regularizer import L2Regularizer
 from stpy.regularization.sdp_constraint import SDPConstraint
 from stpy.kernel import KernelFunction
 import torch
-from torchmin import minimize
+from torchmin import minimize as minimize_torch
 from stpy.candidate_set import CandidateDiscreteSet
+import numpy as np
+from autograd_minimize import minimize
 
 
 class ConvexRKHS(FiniteGaussianLikelihood):
 
     def __init__(self, *args,
-                 regularizer_scale=SDPConstraint(trace_constraint = 0.0001),
-                 Gamma = None,
-                 ARD = True,
+                 regularizer_scale=SDPConstraint(trace_constraint=0.0001),
+                 Gamma=None,
+                 typ="ard",
                  **kwargs):
         super().__init__(*args, **kwargs)
         self.m = self.embedding.get_m()
+        self.anchor = None
         if Gamma is None:
-            self.Gamma = torch.eye(self.m, requires_grad=True).double()
+            self.Gamma = None
         else:
             self.Gamma = Gamma
-        if ARD:
+        self.ard_type = typ
+        if typ == "cov":
+            if self.Gamma is None:
+                self.Gamma = torch.eye(self.m, self.m).double()
             self.kernel = KernelFunction(d=self.m, kernel_name='full_covariance_se', cov=self.Gamma)
-        else:
+        elif typ == "ard":
+            if self.Gamma is None:
+                self.Gamma = torch.ones(size = (self.m,1)).double().view(-1)
+            self.kernel = KernelFunction(d=self.m, kernel_name='ard', ard_gamma=self.Gamma)
+        elif typ == "se":
+            if self.Gamma is None:
+                self.Gamma = torch.eye(1,1).double().view(-1)
+            self.kernel = KernelFunction(d=self.m, kernel_name='squared_exponential', gamma=self.Gamma)
+        elif typ == "linear":
+            if self.Gamma is None:
+                self.Gamma = torch.eye(self.m, self.m).double()
             self.kernel = KernelFunction(d=self.m, kernel_name='linear', cov=self.Gamma)
+        else:
+            raise NotImplementedError("..")
         self.regularizer_scale = regularizer_scale
+        self.kernel_object = KernelFunction(d=self.m, kernel_name='linear')
+
+    def get_lam(self):
+        return self.regularizer.lam
+
+
+    def set_kernel(self,Gamma):
+        self.Gamma = Gamma
+        if  self.ard_type == "cov":
+            self.kernel.cov = Gamma
+        elif self.ard_type == "ard":
+            self.kernel.ard_gamma = Gamma
+        elif self.ard_type == "se":
+            self.kernel.gamma = Gamma
+        elif self.ard_type == "linear":
+            self.kernel.cov = Gamma
+        else:
+            raise NotImplementedError("..")
+
 
     def local_fit(self, weights):
         self.load_data((self.x, self.y), weights=weights)
-        #print ("weights:",self.weights.T)
         self.fitted = False
         super().fit()
-        #print ("fit:",self.theta_fit.T)
         return self.theta_fit
 
     def optimize_params(self, type='bandwidth',
@@ -40,11 +75,12 @@ class ConvexRKHS(FiniteGaussianLikelihood):
                         maxiter=1000,
                         mingradnorm=1e-4,
                         verbose=False,
-                        scale=1.,
+                        scale=10.,
                         bounds=None,
                         parallel=False,
                         cores=None,
-                        diagonal=True):
+                        fit_type='ignore-base',
+                        optimizer = 'torchmin'):
         x_data = self.x
         y_data = self.y
         Phi = lambda x: self.embedding.embed(x)
@@ -54,53 +90,115 @@ class ConvexRKHS(FiniteGaussianLikelihood):
             weights = []
             predictions = []
 
-            if diagonal:
-                diagonal_mask = torch.eye(Gamma.size(0), Gamma.size(1),
-                                          dtype=torch.float32,
-                                          device=Gamma.device)
-                self.Gamma = torch.diag(torch.diag(Gamma)**2)
-                #invGamma = torch.diag(1. / torch.diag(self.Gamma))
-            else:
-                self.Gamma = Gamma
-                #invGamma = torch.diag(1. / torch.diag(self.Gamma.T@self.Gamma))
+            # if ard_type == 'single':
+            #     self.Gamma = Gamma * torch.eye(self.m, self.m).double()
+            #     reg = self.regularizer_scale.eval(self.Gamma ** 2)
+            #
+            # elif ard_type == 'diagonal':
+            #     self.Gamma = torch.diag(Gamma)
+            #     reg = self.regularizer_scale.eval(self.Gamma ** 2)
+            # else:
+            #     self.Gamma = Gamma
 
-            mu = self.mean(self.x)
-            loss = self.regularizer_scale.eval( self.Gamma) + torch.sum((mu - self.y) ** 2)
+            self.set_kernel(Gamma)
+            if self.ard_type == 'se':
+                reg = self.regularizer_scale.eval(Gamma.view(1,1) ** 2)
+            elif self.ard_type == 'ard':
+                reg = self.regularizer_scale.eval(torch.diag(Gamma) ** 2)
+            else:
+                reg = self.regularizer_scale.eval(Gamma ** 2)
+
+            mu = self.mean(self.x, fit_type=fit_type)
+
+            loss = reg + torch.sum((mu - self.y) ** 2)
             return loss
 
         # optimize this
         vals = []
         args = []
         for _ in range(restarts):
-            Gamma = torch.randn((m, m), requires_grad=True).double()
-            result = minimize(total_loss, Gamma, method='bfgs', disp=2)
-            vals.append(result.fun)
-            args.append(result.x)
 
-        self.Gamma = args[np.argmin(vals)]
-        print ("Found optimal:", self.Gamma)
+            if self.ard_type == 'se':
+                Gamma = torch.randn((1, 1), requires_grad=True).double().view(-1) * scale
+            elif self.ard_type == 'ard':
+                Gamma = torch.randn((m, 1), requires_grad=True).double().view(-1) * scale
+            elif self.ard_type == 'cov':
+                Gamma = torch.randn((m, m), requires_grad=True).double() * scale
+            else:
+                raise NotImplementedError(".")
+            #try:
+            if optimizer == 'torchmin':
+                result = minimize_torch(total_loss, Gamma, method='l-bfgs', disp=verbose + 1)
+                vals.append(result.fun)
+                args.append(result.x)
 
-    def get_weights(self, xtest, x = None):
+            elif optimizer == 'autograd':
+                result = minimize(total_loss, Gamma.detach().numpy(), backend='torch', method='L-BFGS-B',
+                               precision='float64', tol=1e-6,
+                               options={'ftol': 1e-6,
+                                        'gtol': mingradnorm, 'eps': 1e-06,
+                                        'maxfun': 15000, 'maxiter': maxiter,
+                                        'maxls': 20, 'disp': verbose + 1})
+
+                vals.append(float(result.fun))
+                args.append(torch.from_numpy(result.x))
+
+            else:
+                raise NotImplementedError("Optimizer not implemented.")
+
+            # vals.append(result.fun)
+            # args.append(result.x)
+
+        # except Exception as e:
+        #     print("Optimization failed.", e)
+        Gamma = args[np.argmin(vals)]
+
+        self.set_kernel(Gamma)
+        self.Gamma = Gamma
+        print("Found optimal:", self.Gamma)
+
+    def get_weights(self, xtest, x=None):
         phitest = self.embed(xtest)
+
         if x is None:
             x = self.x
             phi = self.phi
         else:
             phi = self.embed(x)
+
         out = torch.zeros(size=(phitest.size()[0], x.size()[0])).double()
-        print (out.size())
         for i, x in enumerate(phitest):
             # construct weighting
-            self.kernel.cov = self.Gamma
-            out[i,:] = self.kernel.get_kernel_internal()(x.view(1, -1), phi).view(-1)
+            self.set_kernel(self.Gamma)
+            out[i, :] = self.kernel.get_kernel_internal()(x.view(1, -1), phi).view(-1)
         return out
 
-    def mean(self, xtest):
+    def std(self, xtest):
         phitest = self.embed(xtest)
         out = torch.zeros(size=(phitest.size()[0], 1)).double()
         for i, x in enumerate(phitest):
             # construct weighting
-            self.kernel.cov = self.Gamma
+            self.set_kernel(self.Gamma)
+
+            w = self.kernel.get_kernel_internal()(x.view(1, -1), self.phi)
+
+            # create a local fit
+            self.local_fit(w)
+
+            # local model
+            std = np.sqrt(x.T @ torch.linalg.solve(self.Z, x))
+            # save
+            out[i] = std
+        return out
+
+    def mean_std(self, xtest):
+        phitest = self.embed(xtest)
+        out = torch.zeros(size=(phitest.size()[0], 1)).double()
+        stds = torch.zeros(size=(phitest.size()[0], 1)).double()
+        for i, x in enumerate(phitest):
+            # construct weighting
+            self.set_kernel(self.Gamma)
+
             w = self.kernel.get_kernel_internal()(x.view(1, -1), self.phi)
 
             # create a local fit
@@ -108,7 +206,45 @@ class ConvexRKHS(FiniteGaussianLikelihood):
 
             # local model
             f = x @ self.theta_fit
+            std = np.sqrt(x.T @ torch.linalg.solve(self.Z, x))
+            # save
+            stds[i] = std
+            out[i] = f
 
+        return out,stds
+
+    def model_similarity(self, xtest):
+        if self.anchor is None:
+            raise ValueError("Anchor is not set; local model is not specified.")
+        else:
+            phitest = self.embed(xtest)
+            w = self.kernel.get_kernel_internal()(self.anchor.view(1, -1), phitest)
+            D = torch.sqrt(torch.diag(w.view(-1)))
+            K = D@phitest@phitest.T@D
+            return K
+
+    def mean(self, xtest, fit_type="cutoff", tol=10e-5, cutoff = 0.01):
+        phitest = self.embed(xtest)
+        out = torch.zeros(size=(phitest.size()[0], 1)).double()
+
+        for i, x in enumerate(phitest):
+            # construct weighting
+            self.set_kernel(self.Gamma)
+
+            w = self.kernel.get_kernel_internal()(x.view(1, -1), self.phi)
+
+            if fit_type == 'ignore-base':
+                # remove the true point from the fitting
+                w[w > 1 - tol] = 0.
+            elif fit_type == 'cutoff':
+                w[w <cutoff] = 0.
+                w[w >= cutoff] = 1.
+
+            # create a local fit
+            self.local_fit(w)
+
+            # local model
+            f = x @ self.theta_fit
             # save
             out[i] = f
         return out
@@ -154,7 +290,15 @@ if __name__ == "__main__":
     N = 4
     lam = 1
     s = 0.1
-    Estimator = ConvexRKHS(embedding, ARD = True, s=s, lam=lam, verbose=True, Gamma = 0.5*torch.eye(embedding.get_m()).double())
+    Reg = SDPConstraint(trace_constraint=0.0000001)
+    Estimator = ConvexRKHS(embedding,
+                           typ="se",
+                           s=s,
+                           lam=lam,
+                           verbose=True,
+                           Gamma=None,
+                           regularizer_scale=Reg
+                           )
 
     xtest = interval_torch(d=1, n=n)
     x = torch.zeros(size=(N, 1)).double()
@@ -167,32 +311,37 @@ if __name__ == "__main__":
     ytest = torch.sum(Phi_original(xtest) ** 2, axis=1).view(-1, 1)
 
     Estimator.load_data((x, y))
-    mu = Estimator.mean(xtest).clone()
+    mu,std= Estimator.mean_std(xtest)
 
-    Estimator.optimize_params()
+    Estimator.optimize_params(verbose=True,optimizer="torchmin",
+                              restarts=5)
+
     mu2 = Estimator.mean(xtest)
-
-    # Estimator.optimize_params()
-    #
-
-    print ("True gamma:",gamma_original)
-    print ("Optimized gamma:", torch.diag(Estimator.Gamma))
+    std2 = Estimator.std(xtest)
+    print("True gamma:", gamma_original)
+    print("Optimized gamma:", torch.diag(Estimator.Gamma))
+    print("Optimized gamma:", torch.diag(Estimator.Gamma))
 
     # offset = 20
     # Phi = lambda x: embedding.embed(x)
     fig, ax1 = plt.subplots()
     ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-    ax1.plot(xtest, mu.detach(), 'b', label = 'original hyperparams')
-    ax1.plot(xtest, mu2.detach(), 'g', label = 'optimized hyperparams')
-    ax1.plot(xtest, ytest, 'k--', label = 'true function')
-    ax1.plot(Estimator.x, Estimator.y, 'ko', label = 'data points')
+    ax1.plot(xtest, mu.detach(), 'b', label='original hyperparams')
+
+    ax1.fill_between(xtest.view(-1), mu.view(-1) - std.view(-1), mu.view(-1) + std.view(-1),color =  'b', alpha = 0.1)
+
+    ax1.plot(xtest, mu2.detach(), 'g', label='optimized hyperparams')
+    ax1.fill_between(xtest.view(-1), (mu2 - std2).view(-1), (mu2 + std2).view(-1), color = 'g', alpha = 0.1)
+
+    ax1.plot(xtest, ytest, 'k--', label='true function')
+    ax1.plot(Estimator.x, Estimator.y, 'ko', label='data points')
 
     # Pick a random point in the interval
     x_test = torch.tensor([[0.5]])
-    w = Estimator.get_weights(x_test, x = xtest)
+    w = Estimator.get_weights(x_test, x=xtest)
 
-    ax1.plot(xtest.view(-1), w.view(-1),'r--')
-    ax1.plot(x_test.view(-1), [1.0],'ro')
+    ax1.plot(xtest.view(-1), w.view(-1), 'r--')
+    ax1.plot(x_test.view(-1), [1.0], 'ro')
 
     #
     ax1.legend()

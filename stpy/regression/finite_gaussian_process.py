@@ -57,6 +57,7 @@ class FiniteGaussianLikelihood(RegularizedDictionary):
 
             #TODO: Change to  Gaussian likelihood call to avoid s and Sigma differences for heteroscedasdic case.
             self.Z = torch.einsum('ij,i,ik->jk', phi, weights.view(-1)/self.s**2, phi) + self.regularizer.hessian(torch.ones(self.m))
+
             #self.invV = torch.pinverse(self.Z)
             #self.theta_fit = self.invV @ phi.T @ (weights*self.y)/self.s**2
             self.theta_fit = torch.linalg.solve(self.Z, phi.T @ (weights*self.y)/self.s**2)
