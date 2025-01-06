@@ -19,7 +19,7 @@ class ConvexRKHS(FiniteGaussianLikelihood):
                  **kwargs):
         super().__init__(*args, **kwargs)
         self.m = self.embedding.get_m()
-
+        self.anchor = None
         if Gamma is None:
             self.Gamma = None
         else:
@@ -44,6 +44,11 @@ class ConvexRKHS(FiniteGaussianLikelihood):
         else:
             raise NotImplementedError("..")
         self.regularizer_scale = regularizer_scale
+        self.kernel_object = KernelFunction(d=self.m, kernel_name='linear')
+
+    def get_lam(self):
+        return self.regularizer.lam
+
 
     def set_kernel(self,Gamma):
         self.Gamma = Gamma
@@ -162,14 +167,63 @@ class ConvexRKHS(FiniteGaussianLikelihood):
             phi = self.embed(x)
 
         out = torch.zeros(size=(phitest.size()[0], x.size()[0])).double()
-        print(out.size())
         for i, x in enumerate(phitest):
             # construct weighting
             self.set_kernel(self.Gamma)
             out[i, :] = self.kernel.get_kernel_internal()(x.view(1, -1), phi).view(-1)
         return out
 
-    def mean(self, xtest, fit_type="none", tol=10e-5):
+    def std(self, xtest):
+        phitest = self.embed(xtest)
+        out = torch.zeros(size=(phitest.size()[0], 1)).double()
+        for i, x in enumerate(phitest):
+            # construct weighting
+            self.set_kernel(self.Gamma)
+
+            w = self.kernel.get_kernel_internal()(x.view(1, -1), self.phi)
+
+            # create a local fit
+            self.local_fit(w)
+
+            # local model
+            std = np.sqrt(x.T @ torch.linalg.solve(self.Z, x))
+            # save
+            out[i] = std
+        return out
+
+    def mean_std(self, xtest):
+        phitest = self.embed(xtest)
+        out = torch.zeros(size=(phitest.size()[0], 1)).double()
+        stds = torch.zeros(size=(phitest.size()[0], 1)).double()
+        for i, x in enumerate(phitest):
+            # construct weighting
+            self.set_kernel(self.Gamma)
+
+            w = self.kernel.get_kernel_internal()(x.view(1, -1), self.phi)
+
+            # create a local fit
+            self.local_fit(w)
+
+            # local model
+            f = x @ self.theta_fit
+            std = np.sqrt(x.T @ torch.linalg.solve(self.Z, x))
+            # save
+            stds[i] = std
+            out[i] = f
+
+        return out,stds
+
+    def model_similarity(self, xtest):
+        if self.anchor is None:
+            raise ValueError("Anchor is not set; local model is not specified.")
+        else:
+            phitest = self.embed(xtest)
+            w = self.kernel.get_kernel_internal()(self.anchor.view(1, -1), phitest)
+            D = torch.sqrt(torch.diag(w.view(-1)))
+            K = D@phitest@phitest.T@D
+            return K
+
+    def mean(self, xtest, fit_type="cutoff", tol=10e-5, cutoff = 0.01):
         phitest = self.embed(xtest)
         out = torch.zeros(size=(phitest.size()[0], 1)).double()
 
@@ -182,6 +236,9 @@ class ConvexRKHS(FiniteGaussianLikelihood):
             if fit_type == 'ignore-base':
                 # remove the true point from the fitting
                 w[w > 1 - tol] = 0.
+            elif fit_type == 'cutoff':
+                w[w <cutoff] = 0.
+                w[w >= cutoff] = 1.
 
             # create a local fit
             self.local_fit(w)
@@ -254,13 +311,13 @@ if __name__ == "__main__":
     ytest = torch.sum(Phi_original(xtest) ** 2, axis=1).view(-1, 1)
 
     Estimator.load_data((x, y))
-    mu = Estimator.mean(xtest).clone()
+    mu,std= Estimator.mean_std(xtest)
 
-    Estimator.optimize_params(verbose=True,optimizer="autograd",
+    Estimator.optimize_params(verbose=True,optimizer="torchmin",
                               restarts=5)
 
     mu2 = Estimator.mean(xtest)
-
+    std2 = Estimator.std(xtest)
     print("True gamma:", gamma_original)
     print("Optimized gamma:", torch.diag(Estimator.Gamma))
     print("Optimized gamma:", torch.diag(Estimator.Gamma))
@@ -270,7 +327,12 @@ if __name__ == "__main__":
     fig, ax1 = plt.subplots()
     ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
     ax1.plot(xtest, mu.detach(), 'b', label='original hyperparams')
+
+    ax1.fill_between(xtest.view(-1), mu.view(-1) - std.view(-1), mu.view(-1) + std.view(-1),color =  'b', alpha = 0.1)
+
     ax1.plot(xtest, mu2.detach(), 'g', label='optimized hyperparams')
+    ax1.fill_between(xtest.view(-1), (mu2 - std2).view(-1), (mu2 + std2).view(-1), color = 'g', alpha = 0.1)
+
     ax1.plot(xtest, ytest, 'k--', label='true function')
     ax1.plot(Estimator.x, Estimator.y, 'ko', label='data points')
 
