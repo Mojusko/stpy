@@ -18,4 +18,9 @@ class RegularizedMultinomialEstimator(RegularizedDictionary):
         data = (x, y)
         self.likelihood.load_data(data)
         self.calculate()
+
+    def mean(self, xtest):
+        if xtest.device != self.theta_ml().device:
+            xtest = xtest.to(self.theta_ml().device)
+        return super().mean(xtest)
     
