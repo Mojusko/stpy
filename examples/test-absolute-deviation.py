@@ -8,7 +8,7 @@ if __name__ == "__main__":
 	d = 1
 	p = 4
 	embed_p = ChebyschevEmbedding(d=d, p=p)
-	m = embed_p.size
+	m = embed_p.get_m()
 	GP = KernelizedFeatures(embeding=embed_p, m=m, d=d)
 
 	x = torch.from_numpy(interval(10,d))

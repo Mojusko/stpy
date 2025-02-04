@@ -59,7 +59,6 @@ class GaussianLikelihood(Likelihood):
         else:
             weights = self.weights
 
-        print (self.x.size(),self.y.size(),weights.size())
         if mask is None:
             if self.Sigma is None:
                 def likelihood(theta): return cp.sum(cp.multiply(weights,cp.square(self.x@theta - self.y)))/(2*self.sigma**2)
