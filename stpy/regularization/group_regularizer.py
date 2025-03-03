@@ -1,5 +1,6 @@
 from stpy.regularization.regularizer import Regularizer
 from stpy.regularization.regularizer import L2Regularizer
+from stpy.helpers.helper import cartesian
 from typing import List
 import torch
 import numpy as np
@@ -46,6 +47,12 @@ class GroupRegularizer(Regularizer):
             mask = torch.zeros(self.dim, dtype = torch.bool)
             mask[ind] = True
             masks.append(mask)
+
+        if self.active>1:
+            combmasks = cartesian([masks for _ in range(self.active)])
+            for comb in combmasks:
+                z = torch.stack(comb.tolist())
+                masks.append(torch.any(z.bool(), dim = 0))
         return masks
 
     def is_convex(self):

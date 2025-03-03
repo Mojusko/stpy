@@ -123,13 +123,13 @@ class Likelihood(ABC):
         :param params:
         :return:
         """
-        evidence = torch.Tensor(params['evidence']).bool()
+        evidence = torch.Tensor(params['evidence'])
         self.set_fn = lambda theta:  [self.get_objective_cvxpy(mask = evidence)(theta) <= beta]
         set = self.set_fn(theta)
         return set
 
 
-    def prior_posterior_lr_confidence_set_cvxpy(self, theta, beta, params):
+    def prior_posterior_lr_confidence_set_cvxpy(self, theta, beta):
         """
         Return the cvxpy set constraint
         :param theta:
@@ -138,61 +138,27 @@ class Likelihood(ABC):
         :return:
         """
         # create a Gaussian likelihood
-        sigma = params['sigma']
-        evidence = params['evidence']
-        print ("Evidence, in set construction:", evidence)
-
         self.set_fn = lambda theta:  [self.get_objective_cvxpy()(theta) <= beta]
         set = self.set_fn(theta)
 
         return set
 
-    def confidence_parameter_prior_posterior(self, delta,params):
-        if params['discrete_reg']:
-            H = params['regularizer_hessian']
-            sigma = params['sigma']
-
-            reg = params['regularizer']
-            masks = reg.get_masks()
-            total_evidence = 0
-            y = self.y
-
-            for mask in masks:
-                x = self.x[:,mask]
-                Hsel = H[:,mask][mask,:]
-
-                S_t = torch.sum(torch.multiply(x.T, y.view(-1)).T / (sigma ** 2), dim=0).view(-1, 1)
-                c = -torch.sum(y ** 2) / (2 * sigma ** 2)
-                V_t_lambda = (x.T @ x) / (sigma ** 2) + Hsel
-                invV = torch.inverse(V_t_lambda)
-
-                evidence_of_the_data = c + 0.5 * S_t.T @ invV @ S_t + 0.5 * (
-                            torch.linalg.slogdet(V_t_lambda)[1] - torch.linalg.slogdet(Hsel)[1])
-
-                total_evidence += evidence_of_the_data/len(masks)
-
-                print ("DISCRETE EVIDENCE", total_evidence)
-            return np.log(1. / delta) - total_evidence
-
-        else:
-            H = params['regularizer_hessian']
-            sigma = params['sigma']
-
-            n = self.x.size()[0]
-            #x = self.x @ torch.sqrt(torch.inverse(H).double())
-            y = self.y
-            x = self.x
-
-            S_t = torch.sum(torch.multiply(x.T,y.view(-1)).T/(sigma**2), dim = 0).view(-1,1)
-            c = -torch.sum(y**2)/(2*sigma**2)
-            V_t_lambda = (x.T @ x)/(sigma**2) + H
-            invV = torch.inverse(V_t_lambda)
-
-            evidence_of_the_data = c  + 0.5 * S_t.T @  invV @ S_t - 0.5* (torch.linalg.slogdet(V_t_lambda)[1] -torch.linalg.slogdet(H)[1])
-
-            print ("EVIDENCE", evidence_of_the_data)
-            return np.log(1./delta)-evidence_of_the_data
-
+    def confidence_parameter_lee(self, delta, params):
+        """
+        Evaluates the confidence parameter for the Lee test
+        :param delta:
+        :param params:
+        :return:
+        """
+        theta_fit = params['estimate']
+        print ('theta',theta_fit.size())
+        base = self.get_objective_torch()(theta_fit)
+        S = params['bound']
+        d = self.x.size()[1]
+        L = self.scale()
+        n = self.x.size()[0]
+        beta = base + d * np.log(2*np.e*S*L*n/d) + np.log(1./delta)
+        return beta
     #
     # def confidence_parameter_prior_posterior_weighted(self, delta,params):
     #     H = params['regularizer_hessian']

@@ -376,6 +376,7 @@ class RegularizedDictionary(Estimator):
                                                   mosek.dparam.intpnt_co_tol_pfeas: 1e-8,
                                                   mosek.dparam.intpnt_co_tol_dfeas: 1e-8,
                                                   mosek.dparam.intpnt_co_tol_rel_gap: 1e-8}, verbose=False)
+
         value = prob.value
         return value, theta.value
 

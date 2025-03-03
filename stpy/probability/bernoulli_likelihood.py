@@ -1,10 +1,13 @@
+
 import cvxpy as cp
 import numpy as np
 import torch
 from typing import Union, Dict, List
 from stpy.probability.likelihood import Likelihood
 from stpy.probability.gaussian_likelihood import GaussianLikelihood
+from stpy.borel_set import BorelSet
 import scipy
+from scipy.integrate import dblquad
 
 class BernoulliLikelihoodCanonical(GaussianLikelihood):
 
@@ -19,20 +22,26 @@ class BernoulliLikelihoodCanonical(GaussianLikelihood):
         r = r * mask
         return r
 
+    def get_objective_torch(self):
+        def likelihood(theta):
+            return -torch.einsum('i,ij,jk->k', self.y.view(-1), self.x, theta).view(-1) + torch.sum(torch.log(1+torch.exp(self.x@theta)), dim = 0).view(-1)
+        return likelihood
+
     def link(self, s):
         return 1./(1.+ torch.exp(-s))
 
     def scale(self, err= None, bound = None, mask = None):
-        return 1.
+        return 1./4.
 
     def get_objective_cvxpy(self, mask = None):
         if mask is None:
             def likelihood(theta):
-                return -self.y.T@(self.x @ theta) + cp.sum(cp.logistic(self.x @ theta))
+                return -cp.sum(self.y.T@(self.x @ theta)) + cp.sum(cp.logistic(self.x @ theta))
         else:
             def likelihood(theta):
                 if torch.sum(mask.double())>1e-8:
-                    return -(mask*self.y)@(self.x @ theta) + mask @ cp.logistic(self.x @ theta)
+                    vals = mask.double().view(-1,1) * self.y
+                    return -cp.sum(vals.T@(self.x @ theta)) + cp.sum( mask @ cp.logistic(self.x @ theta))
                 else:
                     return cp.sum(theta*0)
         return likelihood
@@ -85,8 +94,18 @@ class BernoulliLikelihoodCanonical(GaussianLikelihood):
             beta = self.confidence_parameter(delta, params, type=type)
             set = self.lr_confidence_set_cvxpy(theta, beta, params)
 
+        elif type == "Lee":
+            # mle value
+            beta = self.confidence_parameter_lee(delta, params)
+            set = self.prior_posterior_lr_confidence_set_cvxpy(theta, beta)
+
+        elif type == "posterior-prior-LR":
+            beta = self.confidence_parameter_prior_posterior(delta, params)
+            set = self.prior_posterior_lr_confidence_set_cvxpy(theta, beta)
+
         else:
             raise NotImplementedError("The desired confidence set type is not supported.")
+        print (type, "USING BETA: ", beta)
 
         self.set = set
         self.fitted = True
@@ -127,5 +146,15 @@ class BernoulliLikelihoodCanonical(GaussianLikelihood):
             raise NotImplementedError("Not implemented")
         return beta
 
-    def get_objective_torch(self):
-        raise NotImplementedError("Implement me please.")
+    def confidence_parameter_prior_posterior(self, delta,params):
+        likelihood = self.get_objective_torch()
+        H = params['regularizer_hessian']
+        f = lambda theta: torch.exp(-likelihood(theta) - torch.einsum('ji,jk,ki->i',theta,H,theta)/2.)
+        d = self.x.size()[1]
+        S = BorelSet(d, torch.Tensor([[-3, 3], [-3, 3]]))
+        weights, nodes = S.return_legendre_discretization(30)
+        logprefac = torch.slogdet(H * 1./(2.* np.pi))[1]*0.5
+        #logprefac = np.log(1./.16)
+        logD = np.log(torch.sum(weights * f(nodes.T))) + logprefac
+        return -logD  + np.log(1./delta)
+

@@ -5,7 +5,7 @@ from stpy.test_functions.benchmarks import Simple1DFunction
 from stpy.helpers.helper import interval_torch
 from stpy.regression.regularized_dictionary.regularized_multinomial_estimator import RegularizedMultinomialEstimator
 
-from stpy.probability.multinomial_likelihood import MultinomialLikelihood
+from stpy.probability.multinomial_likelihood_grouped import MultinomialLikelihood
 
 if __name__ == "__main__":
     n = 4024  # test points

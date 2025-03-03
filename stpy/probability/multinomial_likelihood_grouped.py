@@ -6,22 +6,23 @@ from stpy.probability.likelihood import Likelihood
 from stpy.probability.gaussian_likelihood import GaussianLikelihood
 import scipy
 
-
 class MultinomialLikelihoodGrouped(Likelihood):
 
-    def __init__(self, classes):
-        self.classes = classes
+    def __init__(self):
         super().__init__()
-
+        
     def evaluate_datapoint(self, theta, d, mask=None):
-
         if mask is None:
             mask = 1.
         x, y = d
+        assert x.dim() == 2, f"Expected x to be (K, feature_dim), got shape {x.shape}"
+        assert y.dim() == 1, f"Expected y to be (K,), got shape {y.shape}"
+        assert x.size(0) == y.size(0), f"K dimension mismatch: {x.size(0)} vs {y.size(0)}"
+        
         logits = x @ theta
-        #max_logit = torch.max(logits)
-        log_probs = logits - torch.log(torch.sum(torch.exp(logits)))
-        return -torch.sum(y * log_probs)
+        max_logit = torch.max(logits)
+        log_probs = logits - max_logit - torch.log(torch.sum(torch.exp(logits - max_logit)))
+        return -torch.sum(y * log_probs) * mask
 
     def get_objective_cvxpy(self, mask=None):
         if mask is None:
@@ -40,11 +41,16 @@ class MultinomialLikelihoodGrouped(Likelihood):
 
     def load_data(self, D, weights=None):
         self.x, self.y = D
+        assert self.x.dim() == 3, "Expected x to be (n_groups, K, feature_dim)"
+        assert self.y.dim() == 2, "Expected y to be (n_groups, K)"
+        assert self.x.size(0) == self.y.size(0), "Number of groups must match"
+        assert self.x.size(1) == self.y.size(1), "K dimension must match"
+        
         self.weights = weights
         self.fitted = False
 
     def evaluate_log(self, f):
-        pass
+        raise NotImplementedError("evaluate_log not implemented")
 
     def scale(self, err=None, bound=None):
         raise NotImplementedError("scale not implemented")

@@ -53,7 +53,10 @@ class L2Regularizer(Regularizer):
         return reg
 
     def eval(self, theta):
-        return self.lam*torch.sum(theta**2)/2.
+        if type(theta) == list:
+            return self.lam*torch.sum(torch.stack([torch.sum(t**2) for t in theta]))/2.
+        else:
+            return self.lam*torch.sum(theta**2)/2.
 
     def hessian(self, theta):
         return self.lam * torch.eye(n = theta.size()[0]).double()
