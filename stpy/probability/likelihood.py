@@ -102,8 +102,9 @@ class Likelihood(ABC):
         """
         evidence = params['evidence']
         estimators = params['estimator_sequence']
-        print ("Evidence:", evidence)
+        print ("Evidence:", evidence, "Estimators", len(estimators)-1, "Evidence no.:", len(evidence))
         val = 0.
+
         for i in range(len(estimators)-1):
             ev = evidence[i]
             est = estimators[i]
@@ -122,13 +123,77 @@ class Likelihood(ABC):
         :param params:
         :return:
         """
-        evidence = torch.Tensor(params['evidence']).bool()
+        evidence = torch.Tensor(params['evidence'])
         self.set_fn = lambda theta:  [self.get_objective_cvxpy(mask = evidence)(theta) <= beta]
         set = self.set_fn(theta)
         return set
 
 
-   
+    def prior_posterior_lr_confidence_set_cvxpy(self, theta, beta):
+        """
+        Return the cvxpy set constraint
+        :param theta:
+        :param beta:
+        :param params:
+        :return:
+        """
+        # create a Gaussian likelihood
+        self.set_fn = lambda theta:  [self.get_objective_cvxpy()(theta) <= beta]
+        set = self.set_fn(theta)
+
+        return set
+
+    def confidence_parameter_lee(self, delta, params):
+        """
+        Evaluates the confidence parameter for the Lee test
+        :param delta:
+        :param params:
+        :return:
+        """
+        theta_fit = params['estimate']
+        print ('theta',theta_fit.size())
+        base = self.get_objective_torch()(theta_fit)
+        S = params['bound']
+        d = self.x.size()[1]
+        L = self.scale()
+        n = self.x.size()[0]
+        beta = base + d * np.log(2*np.e*S*L*n/d) + np.log(1./delta)
+        return beta
+    #
+    # def confidence_parameter_prior_posterior_weighted(self, delta,params):
+    #     H = params['regularizer_hessian']
+    #     sigma = params['sigma']
+    #     ev = params['evidence']
+    #
+    #     print ("Evidence:", ev)
+    #
+    #     n = self.x.size()[0]
+    #     d = self.x.size()[1]
+    #
+    #     bSigma = torch.diag(1./torch.Tensor(ev).double()) * sigma**2
+    #
+    #     K = (self.x @ self.x.T + torch.max(H) * (bSigma))
+    #     y = self.y
+    #
+    #     evidence_of_the_data = -0.5*y.T@torch.linalg.solve(K,y)-0.5*torch.linalg.slogdet(2*np.pi*K)[1] ## last terms come from the other
+    #     return np.log(1./delta) + evidence_of_the_data
+    # def prior_posterior_lr_confidence_set_cvxpy_weighted(self, theta, beta, params):
+    #     """
+    #     Return the cvxpy set constraint
+    #     :param theta:
+    #     :param beta:
+    #     :param params:
+    #     :return:
+    #     """
+    #     # create a Gaussian likelihood
+    #     sigma = params['sigma']
+    #     evidence = params['evidence']
+    #     print ("Evidence, in set construction:", evidence)
+    #     def gauss_likelihood(theta): return cp.sum(cp.multiply(np.array(evidence).reshape(-1,1),cp.square((self.x @ theta - self.y)) / (2 * (sigma ** 2))))
+    #     self.set_fn = lambda theta:  [gauss_likelihood(theta) <= beta + np.sum(np.array(evidence))*(1/2)*np.log(2*np.pi*sigma**2)]
+    #     set = self.set_fn(theta)
+    #     return set
+
 
 
 

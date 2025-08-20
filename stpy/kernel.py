@@ -199,6 +199,9 @@ class KernelFunction(ABC):
 		elif self.optkernel == "linear":
 			return self.linear_kernel
 
+		elif self.optkernel == 'linear_norm':
+			return self.linear_kernel_norm
+
 		elif self.optkernel == "laplace":
 			self.params = dict(**self.params, **{'gamma': self.gamma})
 			return self.laplace_kernel
@@ -312,6 +315,9 @@ class KernelFunction(ABC):
 
 		return kappa * K.T
 
+
+
+
 	def linear_kernel(self, a, b, **kwargs):
 		"""
 			GP linear kernel
@@ -339,6 +345,28 @@ class KernelFunction(ABC):
 			a = a[:, group]
 
 		return kappa * (b @ a.T)  + self.offset
+
+	def linear_kernel_norm(self, a, b, **kwargs):
+		"""
+			GP linear kernel
+		"""
+		if 'kappa' in kwargs.keys():
+			kappa = kwargs['kappa']
+		else:
+			kappa = self.kappa
+
+		if 'group' in kwargs.keys():
+			group = kwargs['group']
+		else:
+			group = self.group
+
+		b = b[:, group]
+		a = a[:, group]
+
+		a_norm = torch.nn.functional.normalize(a, p=2, dim=1) 
+		b_norm = torch.nn.functional.normalize(b, p=2, dim=1) 
+
+		return kappa * (b_norm @ a_norm.T)
 
 	def custom_map_kernel(self, a, b, **kwargs):
 		if 'kappa' in kwargs.keys():

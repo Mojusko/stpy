@@ -39,9 +39,9 @@ import numpy.polynomial.chebyshev as cheb
 import scipy.integrate as integrate
 import torch
 from sklearn.preprocessing import PolynomialFeatures
+from stpy.embeddings.embedding import Embedding
 
-
-class CustomEmbedding():
+class CustomEmbedding(Embedding):
 	def __init__(self, d, embedding_function, m, groups=None, quadrature="fixed"):
 		self.d = d
 		self.groups = groups
@@ -86,7 +86,7 @@ class CustomEmbedding():
 			return varphi
 
 
-class PolynomialEmbedding():
+class PolynomialEmbedding(Embedding):
 
 	def __init__(self, d, p, kappa=1., groups=None, include_bias=True):
 		self.d = d
@@ -94,6 +94,7 @@ class PolynomialEmbedding():
 		self.kappa = kappa
 		self.groups = groups
 		self.compute(include_bias=include_bias)
+		self.m = self.size
 		self.include_bias = include_bias
 
 	def compute(self, include_bias=True):
@@ -158,15 +159,16 @@ class PolynomialEmbedding():
 		pass
 
 
-class ChebyschevEmbedding():
+class ChebyschevEmbedding(Embedding):
 
 
 	def get_m(self):
 		return self.m
 
-	def __init__(self, d, p, groups=None, include_bias=True):
+	def __init__(self, d, p, groups=None, include_bias=True, kappa = 1. ):
 		self.d = d
 		self.p = p
+		self.kappa = kappa
 		self.groups = groups
 		self.c = np.ones(self.p)
 		self.poly = cheb.Chebyshev(self.c)
@@ -185,7 +187,7 @@ class ChebyschevEmbedding():
 			else:
 				z = cheb.chebval(x.numpy(), c)
 				out[:, p - 1] = z.reshape(-1)
-		return torch.from_numpy(out)
+		return self.kappa * torch.from_numpy(out)
 
 	def derivative_1(self, x):
 		pass

@@ -12,18 +12,22 @@ class Regularizer(ABC):
         self.lam = lam
         self.groups = None
         self.convex = True
+        self.discrete = False
 
     @abstractmethod
     def eval(self, theta):
         pass
 
     @abstractmethod
-    def get_regularizer_cvxpy(self):
+    def get_regularizer_cvxpy(self, mask = None):
         def reg(theta): return 0
         return reg
 
     def is_convex(self):
         return self.convex
+
+    def is_discrete(self):
+        return self.discrete
 
     def get_constraint_set_cvxpy(self, theta, c):
         return [self.get_regularizer_cvxpy()(theta) <= c]
@@ -40,12 +44,19 @@ class L2Regularizer(Regularizer):
     def __init__(self, lam=1.):
         super().__init__(lam = lam)
 
-    def get_regularizer_cvxpy(self):
-        def reg(theta): return self.lam*cp.sum_squares(theta)/2.
+    def get_regularizer_cvxpy(self, mask = None):
+        if mask is None:
+            def reg(theta): return self.lam*cp.sum_squares(theta)/2.
+        else:
+            def reg(theta):
+                return self.lam * cp.sum_squares(theta[mask]) / 2.
         return reg
 
     def eval(self, theta):
-        return self.lam*torch.sum(theta**2)/2.
+        if type(theta) == list:
+            return self.lam*torch.sum(torch.stack([torch.sum(t**2) for t in theta]))/2.
+        else:
+            return self.lam*torch.sum(theta**2)/2.
 
     def hessian(self, theta):
         return self.lam * torch.eye(n = theta.size()[0]).double()
@@ -63,10 +74,13 @@ class L2DiagRegularizer(L2Regularizer):
             d = Lam.size()[0]
 
 
-    def get_regularizer_cvxpy(self):
-        def reg(theta): return cp.quad_form(theta, self.Lam.numpy()) / 2.
+    def get_regularizer_cvxpy(self, mask = None):
+        if mask is None:
+            def reg(theta): return cp.quad_form(theta, self.Lam.numpy()) / 2.
+        else:
+            def reg(theta):
+                return cp.quad_form(theta[mask], self.Lam.numpy()) / 2.
         return reg
-
 
     def eval(self, theta):
         v = self.Lam @ theta

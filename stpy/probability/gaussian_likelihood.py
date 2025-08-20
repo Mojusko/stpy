@@ -1,7 +1,7 @@
 import cvxpy as cp
 import numpy as np
 import torch
-from typing import Union, Dict, List
+from typing import Union, Dict, List, Callable
 from stpy.probability.likelihood import Likelihood
 import scipy
 
@@ -23,6 +23,20 @@ class GaussianLikelihood(Likelihood):
             res = torch.sum((f - self.y)**2)/(2*self.sigma**2)
         else:
             res = ((f - self.y).T @ torch.inverse(2*self.Sigma.T@self.Sigma)  @ (f - self.y) )
+        return res
+
+    def evaluate_log_vector(self,f):
+        if self.Sigma is None:
+            res = ((f - self.y)**2)/(2*self.sigma**2)
+        else:
+            res = torch.diag(torch.inverse(2*self.Sigma.T@self.Sigma)  @ (f - self.y)  @ (f - self.y).T)
+        return res
+
+    def evaluate_log_custom(self, f, y):
+        if self.Sigma is None:
+            res = torch.sum((f - y)**2)/(2*self.sigma**2)
+        else:
+            res = ((f - y).T @ torch.inverse(2*self.Sigma.T@self.Sigma)  @ (f - y) )
         return res
 
     def evaluate_datapoint(self, theta, d, mask = None):
@@ -51,7 +65,47 @@ class GaussianLikelihood(Likelihood):
             def likelihood(theta): return (self.x@theta - self.y).T@torch.diag(weights)@torch.linalg.inv(self.Sigma.T@self.Sigma*2)@(self.x@theta - self.y)
         return likelihood
 
-    def get_objective_cvxpy(self, mask = None):
+    def get_objective_cvxpy_linear(self,
+                                   f:Callable,
+                                   mask= None,
+                                   bias = 0.):
+        if self.weights is None:
+            weights = torch.ones(self.x.size()[0]).view(-1, 1)
+        elif mask is not None:
+            mask = self.weights * mask
+        else:
+            weights = self.weights
+
+        if mask is None:
+            if self.Sigma is None:
+                def likelihood(theta):
+                    return cp.sum(cp.multiply(weights, cp.square(f(self.x)- self.y + bias))) / (
+                                2 * self.sigma ** 2)
+
+            else:
+                def likelihood(theta):
+                    return cp.matrix_frac(torch.diag(weights) @ (f(self.x) - self.y + bias),
+                                          2 * self.Sigma.T @ self.Sigma)
+        else:
+            if self.Sigma is None:
+                def likelihood(theta):
+                    if torch.sum(mask.int()) > 1e-8:
+                        return cp.sum_squares(
+                            cp.multiply(mask.double().view(-1, 1), (f(self.x) - self.y + bias))) / (
+                                    2 * self.sigma ** 2)
+                    else:
+                        return cp.sum(theta * 0)
+            else:
+                def likelihood(theta):
+                    if torch.sum(mask.int()) > 1e-8:
+                        return cp.matrix_frac(cp.multiply(mask.double().view(-1, 1), (f(self.x) - self.y + bias)),
+                                              2 * self.Sigma.T @ self.Sigma)
+                    else:
+                        return cp.sum(theta * 0)
+        return likelihood
+
+
+    def get_objective_cvxpy(self, mask = None, bias = 0. ):
         if self.weights is None:
             weights = torch.ones(self.x.size()[0]).view(-1,1)
         elif mask is not None:
@@ -59,36 +113,36 @@ class GaussianLikelihood(Likelihood):
         else:
             weights = self.weights
 
-        print (self.x.size(),self.y.size(),weights.size())
         if mask is None:
             if self.Sigma is None:
-                def likelihood(theta): return cp.sum(cp.multiply(weights,cp.square(self.x@theta - self.y)))/(2*self.sigma**2)
+                def likelihood(theta): return cp.sum(cp.multiply(weights,cp.square(self.x@theta - self.y + bias)))/(2*self.sigma**2)
 
             else:
-                def likelihood(theta): return cp.matrix_frac(torch.diag(weights)@(self.x@theta - self.y),2*self.Sigma.T@self.Sigma)
+                def likelihood(theta): return cp.matrix_frac(torch.diag(weights)@(self.x@theta - self.y + bias),2*self.Sigma.T@self.Sigma)
         else:
             if self.Sigma is None:
                 def likelihood(theta):
                     if torch.sum(mask.int())>1e-8:
-                        return cp.sum_squares(cp.multiply(mask.double().view(-1,1),(self.x @ theta - self.y)) )/ (2*self.sigma ** 2)
+                        return cp.sum_squares(cp.multiply(mask.double().view(-1,1),(self.x @ theta - self.y + bias)) )/ (2*self.sigma ** 2)
                     else:
                         return cp.sum(theta*0)
             else:
                 def likelihood(theta):
                     if torch.sum(mask.int())>1e-8:
-                        return cp.matrix_frac(cp.multiply(mask.double().view(-1,1),(self.x @ theta - self.y)), 2*self.Sigma.T @ self.Sigma)
+                        return cp.matrix_frac(cp.multiply(mask.double().view(-1,1),(self.x @ theta - self.y + bias)), 2*self.Sigma.T @ self.Sigma)
                     else:
                         return cp.sum(theta*0)
         return likelihood
 
-    def information_matrix(self, parameter, mask = None):
+    def information_matrix(self, param, mask = None):
 
         if self.weights is None:
             weights = torch.ones(self.x.size()[0])
-        elif mask is not None:
-            mask = self.weights * mask
         else:
             weights = self.weights
+
+        if mask is not None:
+            mask = weights * mask
 
         if mask is None:
             if self.Sigma is None:
@@ -145,7 +199,7 @@ class GaussianLikelihood(Likelihood):
         elif type == "posterior-prior-LR":
             params["sigma"] = self.sigma
             beta = self.confidence_parameter_prior_posterior(delta, params)
-            set = self.prior_posterior_lr_confidence_set_cvxpy(theta, beta, params)
+            set = self.prior_posterior_lr_confidence_set_cvxpy(theta, beta)
 
         elif type == "posterior-prior-LR-weight":
             params["sigma"] = self.sigma
@@ -191,72 +245,57 @@ class GaussianLikelihood(Likelihood):
             elif type == "adaptive-AB":
                 print ("calculating: adaptive-AB")
                 # this takes the pseudo-maximization with a fixed mixture
-                V = self.information_matrix()
+                V = self.information_matrix(None)
                 beta = 2*np.log(1./delta) + (torch.logdet(V+H) - torch.logdet(H)) + lam*B
             else:
                 raise NotImplementedError("The desired confidence set type is not supported.")
 
         return beta
-    
-
-     def confidence_parameter_prior_posterior(self, delta,params):
-        H = params['regularizer_hessian']
-        print ("hessian", H)
-        sigma = params['sigma']
-        n = self.x.size()[0]
-        x = self.x @ torch.sqrt(torch.inverse(H).double())
-        K = (x@x.T + (sigma**2)*torch.eye(n))
-        evidence_of_the_data = -0.5*self.y.T@torch.linalg.solve(K,self.y)-0.5*torch.linalg.slogdet(K)[1]-(n/2)*np.log(2*np.pi) + (n/2)*np.log(2*np.pi*sigma**2) ## last terms come from the other
-        return np.log(1./delta) - evidence_of_the_data
 
 
-    def confidence_parameter_prior_posterior_weighted(self, delta,params):
-        H = params['regularizer_hessian']
-        sigma = params['sigma']
-        ev = params['evidence']
+    def confidence_parameter_prior_posterior(self, delta,params):
+        if params['discrete_reg']:
+            H = params['regularizer_hessian']
+            sigma = params['sigma']
 
-        print ("Evidence:", ev)
+            reg = params['regularizer']
+            masks = reg.get_masks()
+            total_evidence = 0
+            y = self.y
 
-        n = self.x.size()[0]
-        d = self.x.size()[1]
+            for mask in masks:
+                x = self.x[:,mask]
+                Hsel = H[:,mask][mask,:]
 
-        bSigma = torch.diag(1./torch.Tensor(ev).double()) * sigma**2
+                S_t = torch.sum(torch.multiply(x.T, y.view(-1)).T / (sigma ** 2), dim=0).view(-1, 1)
+                c = -torch.sum(y ** 2) / (2 * sigma ** 2)
+                V_t_lambda = (x.T @ x) / (sigma ** 2) + Hsel
+                invV = torch.inverse(V_t_lambda)
 
-        K = (self.x @ self.x.T + torch.max(H) * (bSigma))
-        y = self.y
+                evidence_of_the_data = c + 0.5 * S_t.T @ invV @ S_t + 0.5 * (
+                            torch.linalg.slogdet(V_t_lambda)[1] - torch.linalg.slogdet(Hsel)[1])
 
-        evidence_of_the_data = -0.5*y.T@torch.linalg.solve(K,y)-0.5*torch.linalg.slogdet(2*np.pi*K)[1] ## last terms come from the other
-        return np.log(1./delta) - evidence_of_the_data
-    def prior_posterior_lr_confidence_set_cvxpy_weighted(self, theta, beta, params):
-        """
-        Return the cvxpy set constraint
-        :param theta:
-        :param beta:
-        :param params:
-        :return:
-        """
-        # create a Gaussian likelihood
-        sigma = params['sigma']
-        evidence = params['evidence']
-        print ("Evidence, in set construction:", evidence)
-        def gauss_likelihood(theta): return cp.sum(cp.multiply(np.array(evidence).reshape(-1,1),cp.square((self.x @ theta - self.y)) / (2 * (sigma ** 2))))
-        self.set_fn = lambda theta:  [gauss_likelihood(theta) <= beta + np.sum(np.array(evidence))*(1/2)*np.log(2*np.pi*sigma**2)]
-        set = self.set_fn(theta)
-        return set
+                total_evidence += np.exp(evidence_of_the_data)/len(masks)
 
-    def prior_posterior_lr_confidence_set_cvxpy(self, theta, beta, params):
-        """
-        Return the cvxpy set constraint
-        :param theta:
-        :param beta:
-        :param params:
-        :return:
-        """
-        # create a Gaussian likelihood
-        sigma = params['sigma']
-        evidence = params['evidence']
-        print ("Evidence, in set construction:", evidence)
-        def gauss_likelihood(theta): return cp.sum(cp.square((self.x @ theta - self.y)) / (2 * (sigma ** 2)))
-        self.set_fn = lambda theta:  [gauss_likelihood(theta) <= beta]
-        set = self.set_fn(theta)
-        return set
+                print ("DISCRETE EVIDENCE", np.log(total_evidence))
+            return np.log(1. / delta) - np.log(total_evidence)
+
+        else:
+            H = params['regularizer_hessian']
+            sigma = params['sigma']
+
+            n = self.x.size()[0]
+            #x = self.x @ torch.sqrt(torch.inverse(H).double())
+            y = self.y
+            x = self.x
+
+            S_t = torch.sum(torch.multiply(x.T,y.view(-1)).T/(sigma**2), dim = 0).view(-1,1)
+            c = -torch.sum(y**2)/(2*sigma**2)
+            V_t_lambda = (x.T @ x)/(sigma**2) + H
+            invV = torch.inverse(V_t_lambda)
+
+            evidence_of_the_data = c  + 0.5 * S_t.T @  invV @ S_t -\
+                                   0.5* (torch.linalg.slogdet(V_t_lambda)[1] -torch.linalg.slogdet(H)[1])
+
+            print ("EVIDENCE", evidence_of_the_data)
+            return np.log(1./delta)-evidence_of_the_data

@@ -32,7 +32,8 @@ class RegularizedDictionary(Estimator):
                  accuracy: float = 1e-8,  # span check accuracy
                  LR_scaling: float = 1.,  # scaling between signal and noise
                  check: str = None,  # type of check when dealing with likelihood/bias error compensation
-                 bound: float = 1., # absolute norm bound on the estimated value, the norm class is specified by the inference type
+                 bound: float = 1.,
+                 # absolute norm bound on the estimated value, the norm class is specified by the inference type
                  custom_check: Union[None, callable] = None,  # custom check function
                  tolerance: float = 1e-6,  # tolerance for optimizer
                  delta: float = 0.1):
@@ -67,6 +68,7 @@ class RegularizedDictionary(Estimator):
         self.estimator_sequence = []
         self.vovk_estimator_sequence = []
         self.weights = None
+
     def description(self):
         return "regularized dictionary object"
 
@@ -108,11 +110,11 @@ class RegularizedDictionary(Estimator):
         self.d = list(self.x.size())[1]
         self.data = True
         self.fitted = False
-        self.fitted_bias  = False
+        self.fitted_bias = False
         for i in range(self.n):
 
             if self.check == "bias":
-                self.evidence.append(self.signal_to_noise_ratio(self.x[i,:].view(1,-1)))
+                self.evidence.append(self.signal_to_noise_ratio(self.x[i, :].view(1, -1)))
             elif self.check == "optimal":
                 self.evidence.append(self.signal_to_noise_ratio_opt(self.x[i, :].view(1, -1)))
             elif self.check == "span":
@@ -120,7 +122,7 @@ class RegularizedDictionary(Estimator):
             elif self.check == "none":
                 self.evidence.append(1.)
             elif self.check == "custom":
-                self.evidence.append(self.custom_check(self, self.x[i,:].view(1,-1)))
+                self.evidence.append(self.custom_check(self, self.x[i, :].view(1, -1)))
             else:
                 self.evidence.append(1.)
             self.estimator_sequence.append(torch.zeros(size=(self.m, 1)).double())
@@ -130,7 +132,7 @@ class RegularizedDictionary(Estimator):
         from scipy.optimize import minimize_scalar
         if not self.likelihood.fitted:
             return 1.
-        #Regret = self.bound/self.likelihood.scale(bound=self.bound)*self.likelihood.x.size()[0]
+        # Regret = self.bound/self.likelihood.scale(bound=self.bound)*self.likelihood.x.size()[0]
         params = {'estimate': self.theta_fit,
                   'regularizer_hessian': self.regularizer.hessian(self.theta_fit),
                   'd_eff': self.d_eff if self.d_eff is not None else self.m,
@@ -145,39 +147,41 @@ class RegularizedDictionary(Estimator):
             phi = self.embed(x)
             V_t = self.likelihood.information_matrix(self.theta_fit) + self.regularizer.hessian(self.theta_fit)
             v = phi @ torch.linalg.pinv(V_t) @ phi.T
-            denom = 1. + omega * v/self.likelihood.scale(bound=self.bound)
+            denom = 1. + omega * v / self.likelihood.scale(bound=self.bound)
             invV_t = torch.linalg.pinv(V_t)
-            b = Regret/denom + (omega/self.likelihood.scale(bound=self.bound))*torch.trace(invV_t @ phi.T @ phi @ invV_t)/ (denom)
+            b = Regret / denom + (omega / self.likelihood.scale(bound=self.bound)) * torch.trace(
+                invV_t @ phi.T @ phi @ invV_t) / (denom)
             return b
 
         N = 1000
-        omegas = np.logspace(-20,0,N, base = 2)
+        omegas = np.logspace(-20, 0, N, base=2)
         vals = []
         valsa = []
         valsb = []
         for omega in omegas:
             vals.append(optimal_fn(omega))
-            #valsa.append(optimal_fn(omega, special=True)[0])
-            #valsb.append(optimal_fn(omega, special=True)[1])
+            # valsa.append(optimal_fn(omega, special=True)[0])
+            # valsb.append(optimal_fn(omega, special=True)[1])
 
         import matplotlib.pyplot as plt
         bias = self.bias(x)
         SNR = self.likelihood.scale(err=bias, bound=self.bound) * self.LR_scaling / (
-            self.likelihood.scale(err=bias, bound=self.bound) * self.LR_scaling + self.bias(x))
-        plt.semilogx(omegas,vals)
+                self.likelihood.scale(err=bias, bound=self.bound) * self.LR_scaling + self.bias(x))
+        plt.semilogx(omegas, vals)
         # plt.plot(omegas,valsa,  linestyle="--")
         # plt.plot(omegas,valsb, linestyle="--")
-        plt.semilogx([SNR for _ in range(N)],vals)
+        plt.semilogx([SNR for _ in range(N)], vals)
 
         plt.show()
         result = minimize_scalar(optimal_fn, bounds=(0, 1), method='bounded')
 
         return float(result.x)
+
     def signal_to_noise_ratio(self, x):
         bias = self.bias(x)
         print("bias", bias)
         SNR = self.likelihood.scale(err=bias, bound=self.bound) * self.LR_scaling / (
-                    self.likelihood.scale(err=bias, bound=self.bound) * self.LR_scaling + self.bias(x))
+                self.likelihood.scale(err=bias, bound=self.bound) * self.LR_scaling + self.bias(x))
         print("scale", self.likelihood.scale(err=bias, bound=self.bound))
         print("SNR", SNR)
         return float(SNR)
@@ -204,7 +208,7 @@ class RegularizedDictionary(Estimator):
                 elif self.check == "none":
                     self.evidence.append(1.)
                 elif self.check == "custom":
-                    self.evidence.append(self.custom_check(self,x.view(1,-1)))
+                    self.evidence.append(self.custom_check(self, x.view(1, -1)))
                 else:
                     self.evidence.append(1.)
             self.x = torch.cat((self.x, x), dim=0)
@@ -221,7 +225,7 @@ class RegularizedDictionary(Estimator):
 
     def fit(self):
         data = (self.phi, self.y)
-        self.likelihood.load_data(data, weights = self.weights)
+        self.likelihood.load_data(data, weights=self.weights)
         self.calculate()
 
     def calculate(self):
@@ -229,11 +233,11 @@ class RegularizedDictionary(Estimator):
         if self.fitted:
             if self.verbose:
                 print("Skip fitting.")
-                return None
+            return None
 
         elif (self.regularizer is None or self.regularizer.is_convex()) and (
                 self.constraints is None or self.constraints.is_convex()):
-            
+
             theta = cp.Variable((self.m, 1))
             likelihood = self.likelihood.get_objective_cvxpy()
             objective = likelihood(theta)
@@ -241,7 +245,7 @@ class RegularizedDictionary(Estimator):
             if self.regularizer is not None:
                 regularizer = self.regularizer.get_regularizer_cvxpy()
                 objective += regularizer(theta)
-                
+
             constraints = []
             if self.constraints is not None and self.use_constraint:
                 set = self.constraints.get_constraint_cvxpy(theta)
@@ -253,20 +257,59 @@ class RegularizedDictionary(Estimator):
                 mosek.dparam.intpnt_co_tol_pfeas: self.tolerance,
                 mosek.dparam.intpnt_co_tol_dfeas: self.tolerance,
                 mosek.dparam.intpnt_co_tol_rel_gap: self.tolerance}, verbose=False)
-            
+
             self.theta_fit = torch.from_numpy(theta.value)
             self.fitted = True
 
-            ## TODO: do this with a decorator
-            if self.inference_type == "LR" or self.inference_type =="posterior-prior-LR-weight":
-                self.update_lr_sequence()
+        elif self.regularizer.is_discrete():
+
+            theta = cp.Variable((self.m, 1))
+            likelihood = self.likelihood.get_objective_cvxpy()
+            objective_base = likelihood(theta)
+
+            masks = self.regularizer.get_masks()
+            regs = self.regularizer.get_list_regularizer_cvxpy()
+
+            values = []
+            thetas = []
+            for mask, reg in zip(masks, regs):
+                objective = objective_base
+                objective += reg(theta)
+                constraints = [theta[~mask] == 0.]
+
+                if self.constraints is not None and self.use_constraint:
+                    set = self.constraints.get_constraint_cvxpy(theta)
+                    constraints += set
+
+                prob = cp.Problem(cp.Minimize(objective), constraints)
+                prob.solve(solver=cp.MOSEK, mosek_params={
+                    mosek.iparam.intpnt_solve_form: mosek.solveform.dual,
+                    mosek.dparam.intpnt_co_tol_pfeas: self.tolerance,
+                    mosek.dparam.intpnt_co_tol_dfeas: self.tolerance,
+                    mosek.dparam.intpnt_co_tol_rel_gap: self.tolerance}, verbose=False)
+
+
+
+                values.append(prob.value)
+                thetas.append(theta.value)
+            index = torch.argmin(torch.Tensor(values))
+            self.theta_fit = torch.from_numpy(thetas[index])
+            self.fitted = True
+
         else:
             raise ValueError(
-                "The regularizer or constraint specified are non-convex, use a dedicated class for non-convex estimation.")
+            "The regularizer or constraint specified are non-convex, use a dedicated class for non-convex estimation.")
+
+    ## TODO: do this with a decorator
+
+
+        if self.inference_type == "LR" or self.inference_type == "posterior-prior-LR-weight":
+            self.update_lr_sequence()
 
     def update_lr_sequence(self):
-        if self.inference_type == "LR" or self.inference_type =="posterior-prior-LR-weight":
+        if self.inference_type == "LR" or self.inference_type == "posterior-prior-LR-weight":
             self.estimator_sequence.append(self.theta_fit)
+
 
     def span_check(self, x):
         if self.verbose:
@@ -285,6 +328,7 @@ class RegularizedDictionary(Estimator):
             return True  # its in the span
         else:
             return False  # its not in the span
+
 
     def bias(self, x):
         """
@@ -305,6 +349,7 @@ class RegularizedDictionary(Estimator):
         err = projection_matrix @ phi.T
         err = float(torch.sum(err ** 2)) * self.bound ** 2
         return err
+
 
     def objective_on_confidence_set(self, theta, objective, inference_type=None):
         params = {'estimate': self.theta_fit,
@@ -331,16 +376,19 @@ class RegularizedDictionary(Estimator):
                                                   mosek.dparam.intpnt_co_tol_pfeas: 1e-8,
                                                   mosek.dparam.intpnt_co_tol_dfeas: 1e-8,
                                                   mosek.dparam.intpnt_co_tol_rel_gap: 1e-8}, verbose=False)
+
         value = prob.value
         return value, theta.value
 
-    def ucb(self, xtest: torch.Tensor, delta=None):
+
+    def ucb(self, xtest: torch.Tensor, delta=None, embeded = False):
         """
         Calculates ucb
         :param xtest: anchor points
         :return: torch
         """
-        return self.lcb(xtest, sign=-1., delta=delta)
+        return self.lcb(xtest, sign=-1., delta=delta, embeded = embeded)
+
 
     def dist(self, tstar, delta, accuracy=1e-3, xtest=None):
         theta = cp.Variable((self.m, 1))
@@ -376,10 +424,11 @@ class RegularizedDictionary(Estimator):
         prob.solve(warm_start=False, solver=cp.MOSEK, mosek_params={
             mosek.iparam.intpnt_solve_form: mosek.solveform.primal,
             mosek.dparam.intpnt_co_tol_pfeas: self.tolerance},
-            verbose=False)
+                   verbose=False)
 
         print("Checking if in", prob.value)
         return prob.value
+
 
     def get_param_conf_set(self, delta=0.1):
         if self.regularizer is not None:
@@ -398,7 +447,8 @@ class RegularizedDictionary(Estimator):
         beta = self.likelihood.confidence_parameter_likelihood_ratio(delta, params)
         return fn, beta
 
-    def lcb(self, xtest: torch.Tensor, sign: float = 1., delta=None):
+
+    def lcb(self, xtest: torch.Tensor, sign: float = 1., delta=None, embeded = False):
         """
         Calculates lcb
         :param xtest: anchor points
@@ -407,7 +457,11 @@ class RegularizedDictionary(Estimator):
         """
         n = xtest.size()[0]
         values = torch.zeros(size=(n, 1)).double()
-        Phi = self.embed(xtest)
+
+        if not embeded:
+            Phi = self.embed(xtest)
+        else:
+            Phi = xtest
 
         theta = cp.Variable((self.m, 1))
         v = cp.Parameter((self.m, 1))
@@ -417,16 +471,17 @@ class RegularizedDictionary(Estimator):
             H = self.regularizer.hessian(self.theta_fit)
         else:
             H = None
+
         params = {'estimate': self.theta_fit,
                   'regularizer_hessian': H,
+                  'discrete_reg': self.regularizer.is_discrete(),
+                  'regularizer': self.regularizer,
                   'd_eff': self.d_eff if self.d_eff is not None else self.m,
                   'bound': self.bound,
                   'kernel_object': KernelFunction(d=self.d, kernel_function=lambda x, y, kappa, group: x.T @ y),
                   'evidence': self.evidence,
                   'estimator_sequence': self.estimator_sequence
                   }
-
-
 
         if delta is None:
             set = self.likelihood.get_confidence_set_cvxpy(theta, type=self.inference_type,
@@ -437,9 +492,10 @@ class RegularizedDictionary(Estimator):
         constraints = []
         constraints += set
 
-        if self.constraints is not None:
+        if self.constraints is not None and self.use_constraint:
             constraint = self.constraints.get_constraint_cvxpy(theta)
             constraints += constraint
+
         prob = cp.Problem(cp.Minimize(objective), constraints)
 
         for j in range(n):
@@ -457,6 +513,7 @@ class RegularizedDictionary(Estimator):
 
         return sign * values
 
+
     def theta_ml(self):
         """
         Calculates and output the parameter vector
@@ -465,12 +522,18 @@ class RegularizedDictionary(Estimator):
         self.calculate()
         return self.theta_fit
 
+
     def theta_covar(self):
         """
         Calculate the covariance function at the current theta estimate
         :return:
         """
         return self.likelihood.information_matrix(self.theta_fit) + self.regularizer.hessian(self.theta_fit)
+
+    def map_raw(self, xtest: torch.Tensor):
+        theta_mean = self.theta_ml()
+        yraw = xtest @ theta_mean
+        return yraw
 
     def mean(self, xtest: torch.Tensor):
         """
@@ -481,6 +544,7 @@ class RegularizedDictionary(Estimator):
         theta_mean = self.theta_ml()
         ymean = embeding @ theta_mean
         return ymean
+
 
     def mean_std(self, xtest: torch.Tensor):
         """
