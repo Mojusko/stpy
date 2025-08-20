@@ -20,27 +20,37 @@ class ConvexRKHS(FiniteGaussianLikelihood):
         super().__init__(*args, **kwargs)
         self.m = self.embedding.get_m()
         self.anchor = None
+
         if Gamma is None:
             self.Gamma = None
         else:
             self.Gamma = Gamma
+
         self.ard_type = typ
         if typ == "cov":
             if self.Gamma is None:
                 self.Gamma = torch.eye(self.m, self.m).double()
             self.kernel = KernelFunction(d=self.m, kernel_name='full_covariance_se', cov=self.Gamma)
+        
         elif typ == "ard":
             if self.Gamma is None:
                 self.Gamma = torch.ones(size = (self.m,1)).double().view(-1)
             self.kernel = KernelFunction(d=self.m, kernel_name='ard', ard_gamma=self.Gamma)
+        
         elif typ == "se":
             if self.Gamma is None:
                 self.Gamma = torch.eye(1,1).double().view(-1)
             self.kernel = KernelFunction(d=self.m, kernel_name='squared_exponential', gamma=self.Gamma)
+        
         elif typ == "linear":
             if self.Gamma is None:
                 self.Gamma = torch.eye(self.m, self.m).double()
             self.kernel = KernelFunction(d=self.m, kernel_name='linear', cov=self.Gamma)
+
+        elif typ == "linear-norm":
+            if self.Gamma is None:
+                self.Gamma = torch.eye(self.m, self.m).double()
+            self.kernel = KernelFunction(d=self.m, kernel_name='linear_norm', kappa = self.Gamma)
         else:
             raise NotImplementedError("..")
         self.regularizer_scale = regularizer_scale
@@ -60,6 +70,8 @@ class ConvexRKHS(FiniteGaussianLikelihood):
             self.kernel.gamma = Gamma
         elif self.ard_type == "linear":
             self.kernel.cov = Gamma
+        elif self.ard_type == "linear-norm":
+            self.kernel.kappa = Gamma
         else:
             raise NotImplementedError("..")
 
@@ -90,16 +102,6 @@ class ConvexRKHS(FiniteGaussianLikelihood):
             weights = []
             predictions = []
 
-            # if ard_type == 'single':
-            #     self.Gamma = Gamma * torch.eye(self.m, self.m).double()
-            #     reg = self.regularizer_scale.eval(self.Gamma ** 2)
-            #
-            # elif ard_type == 'diagonal':
-            #     self.Gamma = torch.diag(Gamma)
-            #     reg = self.regularizer_scale.eval(self.Gamma ** 2)
-            # else:
-            #     self.Gamma = Gamma
-
             self.set_kernel(Gamma)
             if self.ard_type == 'se':
                 reg = self.regularizer_scale.eval(Gamma.view(1,1) ** 2)
@@ -124,6 +126,8 @@ class ConvexRKHS(FiniteGaussianLikelihood):
                 Gamma = torch.randn((m, 1), requires_grad=True).double().view(-1) * scale
             elif self.ard_type == 'cov':
                 Gamma = torch.randn((m, m), requires_grad=True).double() * scale
+            elif self.ard_type == 'linear-norm':
+                Gamma = torch.randn((1, 1), requires_grad=True).double() * scale
             else:
                 raise NotImplementedError(".")
             #try:
@@ -223,22 +227,25 @@ class ConvexRKHS(FiniteGaussianLikelihood):
             K = D@phitest@phitest.T@D
             return K
 
-    def mean(self, xtest, fit_type="cutoff", tol=10e-5, cutoff = 0.01):
+    def mean_iterative(self, xtest, fit_type="cutoff", tol=10e-5, cutoff = 0.01):
         phitest = self.embed(xtest)
         out = torch.zeros(size=(phitest.size()[0], 1)).double()
-
+        self.set_kernel(self.Gamma)
+        
         for i, x in enumerate(phitest):
-            # construct weighting
-            self.set_kernel(self.Gamma)
 
+            # construct weighting 
             w = self.kernel.get_kernel_internal()(x.view(1, -1), self.phi)
 
             if fit_type == 'ignore-base':
                 # remove the true point from the fitting
                 w[w > 1 - tol] = 0.
+
             elif fit_type == 'cutoff':
                 w[w <cutoff] = 0.
                 w[w >= cutoff] = 1.
+            else:
+                pass 
 
             # create a local fit
             self.local_fit(w)
@@ -248,6 +255,28 @@ class ConvexRKHS(FiniteGaussianLikelihood):
             # save
             out[i] = f
         return out
+    
+    def mean(self, xtest, fit_type = 'ignore-base', tol = 10e-5, cutoff = 0.01):
+        phitest = self.embed(xtest)
+        out = torch.zeros(size=(phitest.size()[0], 1)).double()
+        self.set_kernel(self.Gamma)
+        W = self.kernel.get_kernel_internal()(phitest, self.phi)
+        if fit_type == 'ignore-base':
+            # remove the true point from the fitting
+            W[W > 1 - tol] = 0.
+
+        elif fit_type == 'cutoff':
+            W[W < cutoff] = 0.
+            W[W >= cutoff] = 1.
+        else:
+            pass 
+
+        d = phitest.size()[1]
+        covar_matrix = torch.einsum('ij,jk,jl->kil' ,(self.phi.T,W,self.phi)) + self.regularizer.lam * torch.eye(d).double().unsqueeze(0)
+        b = torch.einsum('ik,kl,kp->lip', (self.phi.T, W, self.y))#.squeeze(-1)
+        theta = torch.linalg.solve(covar_matrix, b)
+        out = torch.einsum('ij,ijp->ip', (phitest, theta))
+        return out 
 
     def best_points_so_far(self):
         """
@@ -284,6 +313,7 @@ if __name__ == "__main__":
     from stpy.helpers.helper import interval_torch
     import matplotlib.pyplot as plt
     import numpy as np
+    import time 
 
     embedding = ChebyschevEmbedding(p=4, d=1)
     n = 256
@@ -292,7 +322,7 @@ if __name__ == "__main__":
     s = 0.1
     Reg = SDPConstraint(trace_constraint=0.0000001)
     Estimator = ConvexRKHS(embedding,
-                           typ="se",
+                           typ="ard",
                            s=s,
                            lam=lam,
                            verbose=True,
@@ -311,12 +341,22 @@ if __name__ == "__main__":
     ytest = torch.sum(Phi_original(xtest) ** 2, axis=1).view(-1, 1)
 
     Estimator.load_data((x, y))
+    
+
+    t1 = time.time()
+    out = Estimator.mean(xtest, fit_type='nothing')
+    t2 = time.time()
+    out2 = Estimator.mean_iterative(xtest, fit_type='nothing')
+    t3 = time.time()
+    print("Time for local fit:", t2 - t1)
+    print("Time for linear fit:", t3 - t2)
+    print(torch.sum((out-out2)**2))
     mu,std= Estimator.mean_std(xtest)
 
     Estimator.optimize_params(verbose=True,optimizer="torchmin",
                               restarts=5)
 
-    mu2 = Estimator.mean(xtest)
+    mu2 = Estimator.mean(xtest, fit_type = 'nothing')
     std2 = Estimator.std(xtest)
     print("True gamma:", gamma_original)
     print("Optimized gamma:", torch.diag(Estimator.Gamma))
@@ -327,6 +367,7 @@ if __name__ == "__main__":
     fig, ax1 = plt.subplots()
     ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
     ax1.plot(xtest, mu.detach(), 'b', label='original hyperparams')
+    ax1.plot(xtest, out.detach(), 'y--', label='test')
 
     ax1.fill_between(xtest.view(-1), mu.view(-1) - std.view(-1), mu.view(-1) + std.view(-1),color =  'b', alpha = 0.1)
 

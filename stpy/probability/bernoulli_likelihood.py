@@ -11,8 +11,9 @@ from scipy.integrate import dblquad
 
 class BernoulliLikelihoodCanonical(GaussianLikelihood):
 
-    def __init__(self):
+    def __init__(self, prior = 'gaussian'):
         super().__init__()
+        self.prior = prior
 
     def evaluate_datapoint(self, theta, d, mask = None):
         if mask is None:
@@ -148,13 +149,22 @@ class BernoulliLikelihoodCanonical(GaussianLikelihood):
 
     def confidence_parameter_prior_posterior(self, delta,params):
         likelihood = self.get_objective_torch()
-        H = params['regularizer_hessian']
-        f = lambda theta: torch.exp(-likelihood(theta) - torch.einsum('ji,jk,ki->i',theta,H,theta)/2.)
-        d = self.x.size()[1]
-        S = BorelSet(d, torch.Tensor([[-3, 3], [-3, 3]]))
-        weights, nodes = S.return_legendre_discretization(30)
-        logprefac = torch.slogdet(H * 1./(2.* np.pi))[1]*0.5
-        #logprefac = np.log(1./.16)
-        logD = np.log(torch.sum(weights * f(nodes.T))) + logprefac
-        return -logD  + np.log(1./delta)
-
+        if self.prior == 'gaussian':
+            H = params['regularizer_hessian']
+            f = lambda theta: torch.exp(-likelihood(theta) - torch.einsum('ji,jk,ki->i',theta,H,theta)/2.)
+            d = self.x.size()[1]
+            S = BorelSet(d, torch.Tensor([[-3, 3], [-3, 3]]))
+            weights, nodes = S.return_legendre_discretization(30)
+            logprefac = torch.slogdet(H * 1./(2.* np.pi))[1]*0.5
+            #logprefac = np.log(1./.16)
+            logD = np.log(torch.sum(weights * f(nodes.T))) + logprefac
+            return -logD  + np.log(1./delta)
+        elif self.prior == 'uniform':
+            H = params['regularizer_hessian']
+            f = lambda theta: torch.exp(-likelihood(theta))# - torch.einsum('ji,jk,ki->i',theta,H,theta)/2.)
+            d = self.x.size()[1]
+            S = BorelSet(d, torch.Tensor([[-1, 1], [-1, 1]]))
+            weights, nodes = S.return_legendre_discretization(30)
+            logprefac = np.log(1./.4)
+            logD = np.log(torch.sum(weights * f(nodes.T))) + logprefac
+            return -logD  + np.log(1./delta)

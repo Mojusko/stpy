@@ -174,52 +174,58 @@ if __name__ == "__main__":
                 h4.append(height4)
 
             if repeat == 1:
+
                 plt.figure()
-                plt.bar(xx.reshape(-1) + offset[0] * bar_width, height1.reshape(-1), bar_width, bottom=lcbs1.reshape(-1),  color='purple', alpha=0.6, label='EMK - sparse prior')  # Use 'bottom' to start from y1
-                plt.plot(xx.reshape(-1) + offset[0] * bar_width, val1.reshape(-1), color= 'purple', linestyle='', marker = 'o')  # Use 'bottom' to start from y1
+                #
+                # plt.bar(xx.reshape(-1) + offset[0] * bar_width, height2.reshape(-1), bar_width, bottom=lcbs2.reshape(-1),  color='red', alpha=1, label='EMK - non-sparse prior')  # Use 'bottom' to start from y1
+                # #plt.plot(xx.reshape(-1) + offset[0] * bar_width, val2.reshape(-1), color='red', linestyle='', marker = 'o')
+                #
+                # plt.bar(xx.reshape(-1) + offset[1] * bar_width, height1.reshape(-1), bar_width, bottom=lcbs1.reshape(-1),  color='red', alpha=0.3, label='EMK - sparse prior')  # Use 'bottom' to start from y1
+                # #plt.plot(xx.reshape(-1) + offset[1] * bar_width, val1.reshape(-1), color= 'purple', linestyle='', marker = 'o')  # Use 'bottom' to start from y1
 
-                plt.bar(xx.reshape(-1) + offset[1] * bar_width, height2.reshape(-1), bar_width, bottom=lcbs2.reshape(-1),  color='red', alpha=0.6, label='EMK - non-sparse prior')  # Use 'bottom' to start from y1
-                plt.plot(xx.reshape(-1) + offset[1] * bar_width, val2.reshape(-1), color='red', linestyle='', marker = 'o')
+                plt.bar(xx.reshape(-1) + offset[2] * bar_width, height3.reshape(-1), bar_width, bottom=lcbs3.reshape(-1),  color='blue', alpha=1, label='MQ - non-sparse prior') # Use 'bottom' to start from y1
+                #plt.plot(xx.reshape(-1) + offset[2] * bar_width, val3.reshape(-1), color='blue', linestyle='', marker = 'o')
 
-                plt.bar(xx.reshape(-1) + offset[2] * bar_width, height3.reshape(-1), bar_width, bottom=lcbs3.reshape(-1),  color='blue', alpha=0.6, label='MQ (Marginal Quadrature)') # Use 'bottom' to start from y1
-                plt.plot(xx.reshape(-1) + offset[2] * bar_width, val3.reshape(-1), color='blue', linestyle='', marker = 'o')
-
-                plt.bar(xx.reshape(-1) + offset[3] * bar_width, height4.reshape(-1), bar_width, bottom=lcbs4.reshape(-1),  color='green', alpha=0.6, label='MQ (Marginal Quadrature) - sparse Prior')  # Use 'bottom' to start from y1
-                plt.plot(xx.reshape(-1) + offset[3] * bar_width, val4.reshape(-1), color='green', linestyle='', marker = 'o')
+                plt.bar(xx.reshape(-1) + offset[3] * bar_width, height4.reshape(-1), bar_width, bottom=lcbs4.reshape(-1),  color='blue', alpha=0.3, label='MQ - sparse prior')  # Use 'bottom' to start from y1
+                #plt.plot(xx.reshape(-1) + offset[3] * bar_width, val4.reshape(-1), color='green', linestyle='', marker = 'o')
                 weights = np.zeros(m)
                 weights[0] = 1.
                 weights[1] = 1.
-                plt.plot(xx + offset[0]*bar_width ,weights, 'k', label = 'True')
+                plt.plot(xx + offset[0]*bar_width ,weights, 'ko', label = 'True')
                 plt.legend()
-                plt.savefig(f"pics-poly/figure{i}.png")
+                plt.savefig(f"pics-poly/figure{i}.png", dpi = 100)
 
     print (torch.stack(h1).size())
+    h1 = [torch.nan_to_num(h, nan=1e2) for h in h1]
+    h2 = [torch.nan_to_num(h, nan=1e2) for h in h2]
 
     plt.figure()
-    plt.bar(xx.reshape(-1) + offset[0] * bar_width, torch.sum(torch.stack(h1)[:,:,0], dim = 0), bar_width, bottom=0,
-            color='purple', alpha=0.6, label='EMK - sparse prior')  # Use 'bottom' to start from y1
-    # plt.plot(xx.reshape(-1) + offset[0] * bar_width, val1.reshape(-1), color='purple', linestyle='',
-    #          marker='o')  # Use 'bottom' to start from y1
-    plt.errorbar(xx.reshape(-1) + offset[0] * bar_width, torch.sum(torch.stack(h1)[:,:,0],dim = 0),
-                 yerr=torch.std(torch.stack(h1)[:,:,0], dim=0),
-                 fmt='none', ecolor='black', capsize=5, capthick=1, elinewidth=1)
 
-    plt.bar(xx.reshape(-1) + offset[1] * bar_width, torch.sum(torch.stack(h2)[:,:,0], dim = 0), bar_width, bottom=0,
-            color='red', alpha=0.6, label='EMK - non-sparse prior')  # Use 'bottom' to start from y1
-    # plt.plot(xx.reshape(-1) + offset[1] * bar_width, val2.reshape(-1), color='red', linestyle='', marker='o')
-    plt.errorbar(xx.reshape(-1) + offset[1] * bar_width,
-                 torch.sum(torch.stack(h2)[:, :, 0], dim = 0), yerr=torch.std(torch.stack(h2)[:,:,0], dim=0),
-                           fmt='none', ecolor='black', capsize=5, capthick=1, elinewidth=1)
+    # plt.bar(xx.reshape(-1) + offset[0] * bar_width, torch.sum(torch.stack(h2)[:,:,0], dim = 0), bar_width, bottom=0,
+    #         color='red', alpha=1, label='EMK - non-sparse prior')  # Use 'bottom' to start from y1
+    # # plt.plot(xx.reshape(-1) + offset[1] * bar_width, val2.reshape(-1), color='red', linestyle='', marker='o')
+    # plt.errorbar(xx.reshape(-1) + offset[0] * bar_width,
+    #              torch.sum(torch.stack(h2)[:, :, 0], dim = 0), yerr=torch.std(torch.stack(h2)[:,:,0], dim=0),
+    #                        fmt='none', ecolor='black', capsize=5, capthick=1, elinewidth=1)
+    #
+    #
+    # plt.bar(xx.reshape(-1) + offset[1] * bar_width, torch.sum(torch.stack(h1)[:,:,0], dim = 0), bar_width, bottom=0,
+    #         color='red', alpha=0.5, label='EMK - sparse prior')  # Use 'bottom' to start from y1
+    # # plt.plot(xx.reshape(-1) + offset[0] * bar_width, val1.reshape(-1), color='purple', linestyle='',
+    # #          marker='o')  # Use 'bottom' to start from y1
+    # plt.errorbar(xx.reshape(-1) + offset[1] * bar_width, torch.sum(torch.stack(h1)[:,:,0],dim = 0),
+    #              yerr=torch.std(torch.stack(h1)[:,:,0], dim=0),
+    #              fmt='none', ecolor='black', capsize=5, capthick=1, elinewidth=1)
 
     plt.bar(xx.reshape(-1) + offset[2] * bar_width, torch.sum(torch.stack(h3)[:,:,0], dim = 0), bar_width, bottom=0,
-            color='blue', alpha=0.6, label='MQ (Marginal Quadrature)')  # Use 'bottom' to start from y1
+            color='blue', alpha=1, label='MQ - non-sparse prior')  # Use 'bottom' to start from y1
     # plt.plot(xx.reshape(-1) + offset[2] * bar_width, val3.reshape(-1),   color='blue', linestyle='', marker='o')
     plt.errorbar(xx.reshape(-1) + offset[2] * bar_width,
                  torch.sum(torch.stack(h3)[:, :, 0], dim = 0), yerr=torch.std(torch.stack(h3)[:,:,0], dim=0),
                            fmt='none', ecolor='black', capsize=5, capthick=1, elinewidth=1)
 
     plt.bar(xx.reshape(-1) + offset[3] * bar_width, torch.sum(torch.stack(h4)[:,:,0], dim = 0), bar_width, bottom=0,
-            color='green', alpha=0.6, label='MQ (Marginal Quadrature) - sparse Prior')  # Use 'bottom' to start from y1
+            color='blue', alpha=0.5, label='MQ - sparse prior')  # Use 'bottom' to start from y1
     plt.errorbar(xx.reshape(-1) + offset[3] * bar_width,
                  torch.sum(torch.stack(h4)[:, :, 0], dim = 0), yerr=torch.std(torch.stack(h4)[:,:,0], dim=0),
                            fmt='none', ecolor='black', capsize=5, capthick=1, elinewidth=1)
@@ -228,6 +234,8 @@ if __name__ == "__main__":
     weights = np.zeros(m)
     weights[0] = 1.
     weights[1] = 1.
+    plt.ylabel("Confidence set size")
+    plt.xlabel("Parameter index")
     # plt.plot(xx + offset[0] * bar_width, weights, 'ko', label='True Parameters')
     plt.legend()
     plt.savefig(f"avg_bars.png")

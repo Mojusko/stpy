@@ -286,8 +286,8 @@ if __name__ == "__main__":
     x = torch.randn(N, 1)
     eps = torch.randn(N, 1) * sigma
     y = torch.sin(x) + eps
-
-    mlp = MLPRegressor([1, 8, 8, 1],
+    hidden = 32
+    mlp = MLPRegressor([1, hidden, hidden, 1],
                        likelihood=GaussianLikelihood(sigma=sigma),
                        regularizer=L2Regularizer(lam = 0.01),
                        epochs=150,

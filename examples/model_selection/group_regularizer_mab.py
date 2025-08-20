@@ -166,17 +166,19 @@ if __name__ == "__main__":
 
         plt.figure()
         plt.title("Time "+str(i))
-        plt.bar(xx.reshape(-1) + offset[0] * bar_width, height1.reshape(-1), bar_width, bottom=lcbs1.reshape(-1),  color='purple', alpha=0.6, label='Sparse LR')  # Use 'bottom' to start from y1
-        plt.plot(xx.reshape(-1) + offset[0] * bar_width, val1.reshape(-1), color= 'purple', linestyle='', marker = 'o')  # Use 'bottom' to start from y1
 
-        plt.bar(xx.reshape(-1) + offset[1] * bar_width, height2.reshape(-1), bar_width, bottom=lcbs2.reshape(-1),  color='red', alpha=0.6, label='NonSparse LR')  # Use 'bottom' to start from y1
+        plt.bar(xx.reshape(-1) + offset[1] * bar_width, height2.reshape(-1), bar_width, bottom=lcbs2.reshape(-1),  color='red', alpha=1, label='NonSparse LR')  # Use 'bottom' to start from y1
         plt.plot(xx.reshape(-1) + offset[1] * bar_width, val2.reshape(-1), color='red', linestyle='', marker = 'o')
 
-        plt.bar(xx.reshape(-1) + offset[2] * bar_width, height3.reshape(-1), bar_width, bottom=lcbs3.reshape(-1),  color='blue', alpha=0.6, label='NonSparse Posterior-Prior') # Use 'bottom' to start from y1
-        plt.plot(xx.reshape(-1) + offset[2] * bar_width, val3.reshape(-1), color='blue', linestyle='', marker = 'o')
+        plt.bar(xx.reshape(-1) + offset[0] * bar_width, height1.reshape(-1), bar_width, bottom=lcbs1.reshape(-1),  color='red', alpha=0.6, label='Sparse LR')  # Use 'bottom' to start from y1
+        plt.plot(xx.reshape(-1) + offset[0] * bar_width, val1.reshape(-1), color= 'purple', linestyle='', marker = 'o')  # Use 'bottom' to start from y1
 
-        plt.bar(xx.reshape(-1) + offset[3] * bar_width, height4.reshape(-1), bar_width, bottom=lcbs4.reshape(-1),  color='green', alpha=0.6, label='Sparse Posterior-Prior')  # Use 'bottom' to start from y1
-        plt.plot(xx.reshape(-1) + offset[3] * bar_width, val4.reshape(-1), color='green', linestyle='', marker = 'o')
+
+        plt.bar(xx.reshape(-1) + offset[2] * bar_width, height3.reshape(-1), bar_width, bottom=lcbs3.reshape(-1),  color='tab:blue', alpha=1, label='NonSparse Posterior-Prior') # Use 'bottom' to start from y1
+        plt.plot(xx.reshape(-1) + offset[2] * bar_width, val3.reshape(-1), color='tab:blue', linestyle='', marker = 'o')
+
+        plt.bar(xx.reshape(-1) + offset[3] * bar_width, height4.reshape(-1), bar_width, bottom=lcbs4.reshape(-1),  color='tab:blue', alpha=0.6, label='Sparse Posterior-Prior')  # Use 'bottom' to start from y1
+        plt.plot(xx.reshape(-1) + offset[3] * bar_width, val4.reshape(-1), color='tab:green', linestyle='', marker = 'o')
         weights = np.zeros(m)
         weights[1] = 1.
         plt.plot(xx + offset[0]*bar_width ,weights, 'k', label = 'True')
