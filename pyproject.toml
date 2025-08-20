@@ -1,0 +1,47 @@
+# pyproject.toml
+# Date: 2025-20-08
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "stpy"
+version = "0.0.3"
+description = "Stochastic Process Library for Python"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "Mojmir Mutny", email = "mojmir.mutny@gmail.com" }]
+keywords = ["stochastic processes", "optimization", "machine learning", "probability", "statistics", "probabilistic models"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: Other/Proprietary License",
+  "Operating System :: OS Independent",
+]
+
+# Core (always installed)
+dependencies = [
+  "numpy",
+  "scipy",
+  "pandas",
+  "matplotlib",
+  "scikit-learn",
+  "pymanopt",
+  "cvxpy",
+  "quadprog",
+  "cvxpylayers",
+  "autograd_minimize",
+  "pytorch-minimize",
+  "torch",""
+  "tensorflow",
+  "mosek"
+]
+
+[project.urls]
+Homepage = ""
+Repository = ""
+Issues = ""
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/stpy"]
