@@ -52,6 +52,14 @@ class L2Regularizer(Regularizer):
                 return self.lam * cp.sum_squares(theta[mask]) / 2.
         return reg
 
+    def get_regularizer_torch(self, mask = None):
+        if mask is None:
+            def reg(theta): return self.lam*torch.sum(torch.square(theta))/2.
+        else:
+            def reg(theta):
+                return self.lam * torch.sum(torch.square(theta[mask])) / 2.
+        return reg
+    
     def eval(self, theta):
         if type(theta) == list:
             return self.lam*torch.sum(torch.stack([torch.sum(t**2) for t in theta]))/2.
